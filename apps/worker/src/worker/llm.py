@@ -26,7 +26,10 @@ def _get_int_env(name: str, default: str) -> int:
 
 
 def _get_client() -> OpenAI:
-    api_key = os.getenv("DASHSCOPE_API_KEY", "")
+    from worker.config import get_settings
+
+    settings = get_settings()
+    api_key = settings.dashscope_api_key
     if not api_key:
         raise RuntimeError("DASHSCOPE_API_KEY is required for LLM calls")
     return OpenAI(
@@ -65,7 +68,9 @@ def chat_with_metadata(
     max_tokens: int = 4096,
     temperature: float = 0.7,
 ) -> dict[str, Any]:
-    model = model or os.getenv("DASHSCOPE_MODEL", "qwen-plus")
+    if not model:
+        from worker.config import get_settings
+        model = get_settings().dashscope_model or "qwen-plus"
     client = _get_client()
 
     logger.info("llm_call_start model=%s prompt_len=%d", model, len(user_prompt))

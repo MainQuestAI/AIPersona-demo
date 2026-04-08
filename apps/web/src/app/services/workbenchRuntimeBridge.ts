@@ -591,8 +591,8 @@ function buildStageCopy(
   const latestPlanVersion = projection.latest_plan_version;
   const runStatus = projection.current_run?.status;
   const approvalStatus = latestPlanVersion?.approval_status;
-  const stimuliLabel = formatCountLabel(latestPlanVersion?.stimulus_count, 'stimuli');
-  const twinsLabel = formatCountLabel(latestPlanVersion?.twin_count, 'twins');
+  const stimuliLabel = formatCountLabel(latestPlanVersion?.stimulus_count, '个刺激物');
+  const twinsLabel = formatCountLabel(latestPlanVersion?.twin_count, '个孪生');
 
   switch (stageId) {
     case 'plan':
