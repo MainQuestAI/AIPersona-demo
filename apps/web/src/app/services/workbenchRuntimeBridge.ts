@@ -1,7 +1,9 @@
 import type {
+  ConversationEvent,
   DemoScenarioBundle,
   DemoScenarioId,
   MidrunReviewMetric,
+  PlanSummary,
   RunStepStatus,
   TimelineStage,
   TimelineStep,
@@ -259,6 +261,139 @@ function enrichScenarioForProjection(
         }
       : undefined,
   };
+}
+
+function buildConversationEventsFromArtifacts(
+  projection: WorkbenchProjection,
+): ConversationEvent[] | null {
+  const phase = getRuntimePhase(projection);
+  const planVersion = projection.latest_plan_version;
+  const events: ConversationEvent[] = [];
+
+  // 1. Agent message: plan ready
+  if (planVersion) {
+    events.push({
+      id: 'artifact-event-plan-ready',
+      type: 'agent_message',
+      title: '研究计划就绪',
+      body: `我为 ${planVersion.twin_count ?? 0} 个目标人群和 ${planVersion.stimulus_count ?? 0} 个概念刺激物准备了研究计划。`,
+    });
+  }
+
+  // 2. Plan approval card
+  if (planVersion) {
+    const summary: PlanSummary = {
+      studyType: String(projection.study.study_type ?? '概念筛选'),
+      targetGroupCount: planVersion.twin_count ?? 0,
+      stimuliCount: planVersion.stimulus_count ?? 0,
+      qualMode: 'AI IDI + 主题提取',
+      quantMode: 'SSR 排序',
+      estimatedRuntimeMin: 28,
+      runtimeNote: '定性访谈在各 twin 子集上并行运行。',
+    };
+    events.push({
+      id: 'artifact-event-plan-approval',
+      type: 'plan_approval_card',
+      summary,
+      primaryText: `已为 ${planVersion.twin_count ?? 0} 个人群和 ${planVersion.stimulus_count ?? 0} 个刺激物生成计划。`,
+      secondaryText: '执行流程将先完成 AI 深度访谈、提取主题，然后请求审核，再继续进入定量排序。',
+      actions: ['批准计划', '请求修改', '查看计划详情'],
+    });
+  }
+  if (phase === 'draft' || phase === 'pending_approval' || phase === 'ready_to_run') {
+    return events.length > 0 ? events : null;
+  }
+
+  // 3. Qual session card (from qual_transcript artifact)
+  const qualArtifact = getLatestArtifact(projection, 'qual_transcript');
+  if (qualArtifact) {
+    const manifest = qualArtifact.manifest as Record<string, any>;
+    const themes = manifest.themes ?? {};
+    const interviews: Array<Record<string, any>> = Array.isArray(manifest.interviews) ? manifest.interviews : [];
+    const twinNames = [...new Set(interviews.map((i) => String(i.twin_name ?? '未知')))];
+    const excerpts = interviews.slice(0, 4).map((interview) => ({
+      speakerLabel: String(interview.twin_name ?? '受访者'),
+      lines: String(interview.response ?? '')
+        .split('\n')
+        .filter(Boolean)
+        .slice(0, 3),
+    }));
+    events.push({
+      id: 'artifact-event-qual-session',
+      type: 'qual_session_card',
+      runningOn: twinNames,
+      completedSessionsLabel: `已完成访谈：${interviews.length} / ${interviews.length}`,
+      completedSessionsNote: `已完成 ${interviews.length} 场 AI 深度访谈。`,
+      emergingThemes: Array.isArray(themes.themes) ? themes.themes.slice(0, 4).map(String) : [],
+      helperText: String(themes.overall_insight ?? ''),
+      excerpts,
+    });
+  }
+  if (phase === 'running') {
+    return events.length > 0 ? events : null;
+  }
+
+  // 4. Midrun review card (from qual artifact data)
+  if (qualArtifact) {
+    const manifest = qualArtifact.manifest as Record<string, any>;
+    const themes = manifest.themes ?? {};
+    const interviews: Array<Record<string, any>> = Array.isArray(manifest.interviews) ? manifest.interviews : [];
+    const twinCount = Number(manifest.twin_count ?? 0);
+    const themeLabels = Array.isArray(themes.themes) ? themes.themes.map(String) : [];
+    events.push({
+      id: 'artifact-event-midrun-review',
+      type: 'midrun_review_card',
+      title: '中途审批',
+      body: [
+        '定性探索已经充分，可以继续推进。',
+        `${twinCount} 个目标人群的主要主题已趋于稳定。`,
+        '是否继续进入定量排序？',
+      ],
+      decisionSummary: String(themes.overall_insight ?? '定性阶段已形成稳定判断信号。'),
+      metrics: [
+        { label: '目标人群覆盖', value: formatCoverageLabel(twinCount), tone: twinCount > 0 ? 'positive' : 'warning' },
+        { label: '访谈轮次', value: `${interviews.length} 轮已完成`, tone: interviews.length > 0 ? 'positive' : 'warning' },
+        { label: '稳定主题', value: `${themeLabels.length} 个已浮现`, tone: themeLabels.length > 0 ? 'positive' : 'warning' },
+        { label: '证据沉淀', value: `${getArtifactCount(projection)} 份中间产物`, tone: 'neutral' },
+      ],
+      focusThemes: themeLabels.slice(0, 4),
+      recommendation: '建议继续进入定量排序。',
+      actions: ['继续定量排序', '暂停编辑'],
+    });
+  }
+  if (phase === 'awaiting_midrun_review') {
+    return events.length > 0 ? events : null;
+  }
+
+  // 5. Recommendation card (from recommendation artifact)
+  const recArtifact = getLatestArtifact(projection, 'recommendation');
+  if (recArtifact) {
+    const manifest = recArtifact.manifest as Record<string, any>;
+    events.push({
+      id: 'artifact-event-recommendation',
+      type: 'recommendation_card',
+      winner: String(manifest.winner ?? '待确认'),
+      confidence: String(manifest.confidence_label ?? '-- / 中'),
+      body: String(manifest.supporting_text ?? ''),
+      actions: ['进入消费者验证', '查看详细对比'],
+    });
+  }
+
+  // 6. Study complete card
+  if (phase === 'completed') {
+    events.push({
+      id: 'artifact-event-study-complete',
+      type: 'study_complete_card',
+      title: '研究完成，推荐结论就绪。',
+      body: [
+        '本研究已完成定性探索、定量排序和综合分析。',
+        '当前推荐结论可供审阅、导出或归档。',
+      ],
+      actions: ['查看回放', '下载报告', '归档到资产库'],
+    });
+  }
+
+  return events.length > 0 ? events : null;
 }
 
 function buildArtifactScenarioBundle(
@@ -608,6 +743,19 @@ export function getSurfaceCtaLabels(
   }
 }
 
+export function buildSetupBarData(projection: WorkbenchProjection) {
+  const scenario = getPitchScenarioBundle(projection);
+  return {
+    consumerTwinsLabel: `${getTwinCount(projection)} 个数字孪生`,
+    builtFrom: `${projection.twins?.length ?? 0} 个 Twin + ${projection.stimuli?.length ?? 0} 个 Stimulus`,
+    benchmarkPack: scenario.trustPanel.benchmarkPack,
+    lastUpdated: projection.current_run?.updated_at ?? projection.latest_plan_version?.created_at ?? '--',
+    stimulusLabels: (projection.stimuli ?? []).map((s) => s.name),
+    stimulusScope: `${getStimulusCount(projection)} 个刺激物`,
+    stimulusExpansionNote: '',
+  };
+}
+
 export function buildPromptSuggestions(
   projection: WorkbenchProjection,
 ): string[] {
@@ -813,7 +961,14 @@ export function buildTimelineStepsForProjection(
 
 export function buildConversationEventsForProjection(
   projection: WorkbenchProjection,
-): DemoScenarioBundle['conversationEvents'] {
+): ConversationEvent[] {
+  // Prefer artifact-based events when available
+  const artifactEvents = buildConversationEventsFromArtifacts(projection);
+  if (artifactEvents && artifactEvents.length > 0) {
+    return artifactEvents;
+  }
+
+  // Fallback: slice mock scenario events by phase
   const phase = getRuntimePhase(projection);
   const scenario = getPitchScenarioBundle(projection);
 

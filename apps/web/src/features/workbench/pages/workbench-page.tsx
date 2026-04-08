@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronDown, Info } from 'lucide-react';
 
-import { selectStudySetupBarData } from '@/mocks/selectors';
 import { buildStudyRoute } from '@/app/services/studyRuntimeViews';
 import { sendChatMessage, type WorkbenchProjection } from '@/app/services/studyRuntime';
 import { useWorkbenchUiStore } from '@/app/store/ui-store';
@@ -11,6 +10,7 @@ import {
   buildConversationEventsForProjection,
   buildExecutiveSummaryForProjection,
   buildPromptSuggestions,
+  buildSetupBarData,
   buildStudySessionBoard,
   getPitchScenarioBundle,
 } from '@/app/services/workbenchRuntimeBridge';
@@ -56,8 +56,8 @@ export function WorkbenchPage({
     [projection],
   );
   const setupBarData = useMemo(
-    () => selectStudySetupBarData(scenario),
-    [scenario],
+    () => buildSetupBarData(projection),
+    [projection],
   );
   const executiveSummary = useMemo(
     () => buildExecutiveSummaryForProjection(projection),
