@@ -1,0 +1,24 @@
+{
+  "name": "aipersona-demo",
+  "private": true,
+  "packageManager": "pnpm@10.0.0",
+  "scripts": {
+    "dev:web": "pnpm --filter web dev",
+    "dev:api": "./scripts/dev-api.sh",
+    "dev:worker": "./scripts/dev-worker.sh",
+    "db:migrate": "./scripts/db-migrate.sh",
+    "remote:bootstrap": "./scripts/remote-dev-bootstrap.sh",
+    "remote:stop": "./scripts/remote-dev-stop.sh",
+    "remote:temporal:up": "./scripts/remote-temporal-up.sh",
+    "remote:temporal:down": "./scripts/remote-temporal-down.sh",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "check:contracts": "pnpm exec tsc -p packages/contracts/tsconfig.json --noEmit && pnpm exec tsc -p packages/domain-models/tsconfig.json --noEmit",
+    "check:runtime": "python3 -m compileall apps/api/src apps/worker/src"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0",
+    "typescript": "^5.6.3"
+  }
+}

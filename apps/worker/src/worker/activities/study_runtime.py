@@ -1,0 +1,806 @@
+from __future__ import annotations
+
+import asyncio
+import html
+import json
+import logging
+from contextlib import contextmanager
+import os
+from typing import Any, Iterator, Optional
+
+import psycopg
+from psycopg.rows import dict_row
+from psycopg.types.json import Json
+from temporalio import activity
+from temporalio.exceptions import ApplicationError
+
+from worker.llm import LLMRequestError, chat_json_with_metadata, chat_with_metadata
+
+logger = logging.getLogger(__name__)
+
+
+def _database_url() -> str:
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required for worker activities")
+    return database_url
+
+
+@contextmanager
+def _connect() -> Iterator[psycopg.Connection[Any]]:
+    with psycopg.connect(_database_url(), row_factory=dict_row) as connection:
+        yield connection
+
+
+def _get_study_context(run_id: str) -> dict[str, Any]:
+    """Fetch study context needed for AI execution."""
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT s.business_question, s.study_type, s.category, s.brand,
+                       spv.twin_version_ids, spv.stimulus_ids,
+                       spv.qual_config_json, spv.quant_config_json
+                FROM study_run sr
+                JOIN study s ON s.id = sr.study_id
+                JOIN study_plan_version spv ON spv.id = sr.study_plan_version_id
+                WHERE sr.id = %s
+                """,
+                (run_id,),
+            )
+            row = cur.fetchone()
+    if row is None:
+        raise RuntimeError(f"Study run {run_id} not found")
+    return dict(row)
+
+
+def _write_artifact(
+    run_id: str,
+    artifact_type: str,
+    manifest: dict[str, Any],
+    *,
+    connection: Optional[psycopg.Connection[Any]] = None,
+) -> str:
+    """Write an artifact to the database and return its ID."""
+    owns_connection = connection is None
+    conn = connection
+    if conn is None:
+        conn = psycopg.connect(_database_url(), row_factory=dict_row)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO artifact (study_run_id, artifact_type, format, storage_uri, artifact_manifest_json, status)
+                VALUES (%s, %s, 'json', 'inline://json', %s, 'ready')
+                RETURNING id
+                """,
+                (run_id, artifact_type, Json(manifest)),
+            )
+            row = cur.fetchone()
+        if owns_connection:
+            conn.commit()
+    finally:
+        if owns_connection:
+            conn.close()
+    return str(row["id"])
+
+
+def _write_formatted_artifact(
+    run_id: str,
+    artifact_type: str,
+    manifest: dict[str, Any],
+    *,
+    artifact_format: str,
+    storage_uri: str,
+    connection: Optional[psycopg.Connection[Any]] = None,
+) -> str:
+    owns_connection = connection is None
+    conn = connection
+    if conn is None:
+        conn = psycopg.connect(_database_url(), row_factory=dict_row)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO artifact (study_run_id, artifact_type, format, storage_uri, artifact_manifest_json, status)
+                VALUES (%s, %s, %s, %s, %s, 'ready')
+                RETURNING id
+                """,
+                (run_id, artifact_type, artifact_format, storage_uri, Json(manifest)),
+            )
+            row = cur.fetchone()
+        if owns_connection:
+            conn.commit()
+    finally:
+        if owns_connection:
+            conn.close()
+    return str(row["id"])
+
+
+def _coerce_identifier_list(raw_values: Any) -> list[str]:
+    if not isinstance(raw_values, list):
+        return []
+    return [str(item) for item in raw_values]
+
+
+def _load_selected_twin_personas(context: dict[str, Any]) -> list[dict[str, Any]]:
+    twin_version_ids = _coerce_identifier_list(context.get("twin_version_ids"))
+    if not twin_version_ids:
+        raise RuntimeError("Study plan version has no twin_version_ids")
+
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                  tv.id,
+                  tv.persona_profile_snapshot_json,
+                  ta.label AS target_audience_label
+                FROM twin_version tv
+                JOIN consumer_twin ct ON ct.id = tv.consumer_twin_id
+                LEFT JOIN target_audience ta ON ta.id = ct.target_audience_id
+                WHERE tv.id = ANY(%s::uuid[])
+                ORDER BY array_position(%s::uuid[], tv.id)
+                """,
+                (twin_version_ids, twin_version_ids),
+            )
+            rows = cur.fetchall()
+
+    personas: list[dict[str, Any]] = []
+    for row in rows:
+        snapshot = row.get("persona_profile_snapshot_json")
+        snapshot = snapshot if isinstance(snapshot, dict) else {}
+        system_prompt = str(snapshot.get("system_prompt", "")).strip()
+        if not system_prompt:
+            raise RuntimeError(f"Twin version {row['id']} is missing system_prompt in snapshot")
+        personas.append(
+            {
+                "id": str(row["id"]),
+                "name": str(snapshot.get("name") or row.get("target_audience_label") or row["id"]),
+                "system_prompt": system_prompt,
+                "target_audience_label": row.get("target_audience_label"),
+                "snapshot": snapshot,
+            }
+        )
+
+    missing = sorted(set(twin_version_ids) - {item["id"] for item in personas})
+    if missing:
+        raise RuntimeError(f"Twin versions not found in asset catalog: {', '.join(missing)}")
+    return personas
+
+
+def _compose_stimulus_description(record: dict[str, Any]) -> str:
+    payload = record.get("stimulus_json")
+    payload = payload if isinstance(payload, dict) else {}
+    lines = [f"产品概念：{record.get('name', '未命名刺激物')}"]
+    description = str(record.get("description", "")).strip()
+    if description:
+        lines.append(f"核心描述：{description}")
+    if payload.get("price"):
+        lines.append(f"价格定位：{payload['price']}")
+    if payload.get("packaging"):
+        lines.append(f"包装：{payload['packaging']}")
+    if payload.get("target_scene"):
+        lines.append(f"目标场景：{payload['target_scene']}")
+    return "\n".join(lines)
+
+
+def _load_selected_stimuli(context: dict[str, Any]) -> list[dict[str, Any]]:
+    stimulus_ids = _coerce_identifier_list(context.get("stimulus_ids"))
+    if not stimulus_ids:
+        raise RuntimeError("Study plan version has no stimulus_ids")
+
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, name, description, stimulus_json
+                FROM stimulus
+                WHERE id = ANY(%s::uuid[])
+                ORDER BY array_position(%s::uuid[], id)
+                """,
+                (stimulus_ids, stimulus_ids),
+            )
+            rows = cur.fetchall()
+
+    stimuli = [
+        {
+            "id": str(row["id"]),
+            "name": str(row["name"]),
+            "description": _compose_stimulus_description(dict(row)),
+            "raw": dict(row),
+        }
+        for row in rows
+    ]
+    missing = sorted(set(stimulus_ids) - {item["id"] for item in stimuli})
+    if missing:
+        raise RuntimeError(f"Stimuli not found in asset catalog: {', '.join(missing)}")
+    return stimuli
+
+
+def _merge_usage(*usage_items: dict[str, Any]) -> dict[str, Any]:
+    non_empty = [item for item in usage_items if isinstance(item, dict)]
+    if not non_empty:
+        return {}
+    model = str(non_empty[-1].get("model") or "unknown")
+    return {
+        "model": model,
+        "prompt_tokens": sum(int(item.get("prompt_tokens", 0) or 0) for item in non_empty),
+        "completion_tokens": sum(int(item.get("completion_tokens", 0) or 0) for item in non_empty),
+        "total_tokens": sum(int(item.get("total_tokens", 0) or 0) for item in non_empty),
+        "cost_estimate": round(sum(float(item.get("cost_estimate", 0) or 0) for item in non_empty), 4),
+        "call_count": len(non_empty),
+    }
+
+
+def _build_replay_manifest(
+    *,
+    context: dict[str, Any],
+    qual_themes: dict[str, Any],
+    quant_ranking: dict[str, Any],
+    recommendation: dict[str, Any],
+) -> dict[str, Any]:
+    ranking = quant_ranking.get("ranking") if isinstance(quant_ranking, dict) else []
+    ranking = ranking if isinstance(ranking, list) else []
+    winner = recommendation.get("winner") if isinstance(recommendation, dict) else None
+    next_action = recommendation.get("next_action") if isinstance(recommendation, dict) else None
+    stages = [
+        {
+            "id": "plan",
+            "label": "计划锁定",
+            "inputs": [context.get("business_question", "未命名研究问题")],
+            "outputs": [
+                f"{len(_coerce_identifier_list(context.get('twin_version_ids')))} 个孪生版本",
+                f"{len(_coerce_identifier_list(context.get('stimulus_ids')))} 个刺激物",
+            ],
+            "decisions": ["进入 AI 定性访谈"],
+        },
+        {
+            "id": "qual",
+            "label": "定性访谈",
+            "inputs": [context.get("business_question", "未命名研究问题")],
+            "outputs": list(qual_themes.get("themes", []))[:4] if isinstance(qual_themes, dict) else [],
+            "decisions": [str(qual_themes.get("overall_insight", ""))] if isinstance(qual_themes, dict) else [],
+        },
+        {
+            "id": "quant",
+            "label": "量化排序",
+            "inputs": [str(item.get("stimulus_name", "")) for item in ranking[:3]],
+            "outputs": [
+                f"{item.get('stimulus_name', '未命名')} {item.get('score', '--')}"
+                for item in ranking[:3]
+            ],
+            "decisions": [str(quant_ranking.get("scoring_methodology", ""))] if isinstance(quant_ranking, dict) else [],
+        },
+        {
+            "id": "recommendation",
+            "label": "推荐结论",
+            "inputs": [winner or "待确定"],
+            "outputs": [str(recommendation.get("supporting_text", ""))] if isinstance(recommendation, dict) else [],
+            "decisions": [str(next_action or "需人工复核")],
+        },
+    ]
+    return {
+        "title": f"{context.get('study_type', 'study')} runtime replay",
+        "stages": stages,
+    }
+
+
+def _build_management_summary(
+    *,
+    context: dict[str, Any],
+    qual_themes: dict[str, Any],
+    quant_ranking: dict[str, Any],
+    recommendation: dict[str, Any],
+) -> dict[str, Any]:
+    ranking = quant_ranking.get("ranking") if isinstance(quant_ranking, dict) else []
+    ranking = ranking if isinstance(ranking, list) else []
+    top_two = ranking[:2]
+    headline = f"{recommendation.get('winner', '当前无明确优胜概念')} 建议进入下一轮验证"
+    evidence = [str(qual_themes.get("overall_insight", ""))] if isinstance(qual_themes, dict) else []
+    evidence.extend(
+        f"{item.get('stimulus_name', '未命名')} 得分 {item.get('score', '--')}，置信度 {item.get('confidence_label', '--')}"
+        for item in top_two
+    )
+    return {
+        "headline": headline,
+        "business_question": context.get("business_question"),
+        "winner": recommendation.get("winner"),
+        "supporting_text": recommendation.get("supporting_text"),
+        "next_action": recommendation.get("next_action"),
+        "evidence_points": [point for point in evidence if point],
+        "segment_differences": recommendation.get("segment_differences", []),
+    }
+
+
+def _build_report_html(
+    *,
+    context: dict[str, Any],
+    management_summary: dict[str, Any],
+    quant_ranking: dict[str, Any],
+) -> str:
+    ranking = quant_ranking.get("ranking") if isinstance(quant_ranking, dict) else []
+    ranking = ranking if isinstance(ranking, list) else []
+    ranking_items = "".join(
+        (
+            "<li>"
+            f"{html.escape(str(item.get('stimulus_name', '未命名')))}"
+            f" · 得分 {html.escape(str(item.get('score', '--')))}"
+            f" · 置信度 {html.escape(str(item.get('confidence_label', '--')))}"
+            "</li>"
+        )
+        for item in ranking
+    )
+    evidence_items = "".join(
+        f"<li>{html.escape(str(item))}</li>"
+        for item in management_summary.get("evidence_points", [])
+    )
+    return (
+        "<article>"
+        f"<h1>{html.escape(str(context.get('business_question', 'AIpersona 研究报告')))}</h1>"
+        f"<h2>{html.escape(str(management_summary.get('headline', '管理层摘要')))}</h2>"
+        f"<p>{html.escape(str(management_summary.get('supporting_text', '')))}</p>"
+        f"<h3>推荐下一步</h3><p>{html.escape(str(management_summary.get('next_action', '待确认')))}</p>"
+        f"<h3>关键证据</h3><ul>{evidence_items}</ul>"
+        f"<h3>排序结果</h3><ol>{ranking_items}</ol>"
+        "</article>"
+    )
+
+
+# ---------------------------------------------------------------------------
+#  Activity 1: mark_run_running (unchanged — just marks status)
+# ---------------------------------------------------------------------------
+
+def _mark_run_running(payload: dict[str, str]) -> None:
+    run_id = payload["study_run_id"]
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE study_run
+                SET status = 'running',
+                    started_at = COALESCE(started_at, now()),
+                    updated_at = now()
+                WHERE id = %s
+                """,
+                (run_id,),
+            )
+            cursor.execute(
+                """
+                UPDATE run_step
+                SET status = 'running',
+                    started_at = COALESCE(started_at, now()),
+                    updated_at = now()
+                WHERE study_run_id = %s
+                  AND step_type = 'twin_preparation'
+                  AND attempt_no = 1
+                """,
+                (run_id,),
+            )
+        connection.commit()
+
+
+# ---------------------------------------------------------------------------
+#  Activity 2: advance_to_midrun_review — NOW WITH AI QUAL RESEARCH
+# ---------------------------------------------------------------------------
+
+def _run_idi_interview(
+    twin: dict[str, Any],
+    stimulus: dict[str, Any],
+    business_question: str,
+) -> dict[str, Any]:
+    """Run a single AI IDI interview: twin persona answers about a stimulus."""
+    stimulus_desc = str(stimulus["description"])
+    interviewer_system = (
+        "你是一位专业的消费者研究访谈员。你正在进行一对一深度访谈（IDI），"
+        "探索消费者对一个新产品概念的真实态度。\n"
+        "请提出 3-4 个开放性问题，引导被访者表达对产品概念的第一反应、"
+        "购买意愿、顾虑和建议。每个问题后等待被访者回答。\n"
+        "最后总结本次访谈的关键发现。\n\n"
+        f"研究问题：{business_question}\n"
+        f"被访者概况：{twin['name']}\n"
+        f"测试产品概念：\n{stimulus_desc}"
+    )
+
+    llm_result = chat_with_metadata(
+        system_prompt=str(twin["system_prompt"]),
+        user_prompt=(
+            f"你现在参加一个消费者产品调研。研究员会向你展示一个新饮品概念。\n\n"
+            f"产品概念信息：\n{stimulus_desc}\n\n"
+            f"请分享你看到这个产品概念后的：\n"
+            f"1. 第一反应和感受\n"
+            f"2. 你觉得这个产品适合谁？为什么？\n"
+            f"3. 你自己会不会考虑购买？什么因素最影响你的决定？\n"
+            f"4. 这个产品有什么让你担心或不确定的地方？\n"
+            f"5. 如果让你给建议，你觉得这个产品可以怎么改进？"
+        ),
+        temperature=0.8,
+    )
+
+    return {
+        "twin_id": twin["id"],
+        "twin_name": twin["name"],
+        "stimulus_id": stimulus["id"],
+        "stimulus_name": stimulus["name"],
+        "response": llm_result["content"],
+        "usage": llm_result["usage"],
+    }
+
+
+def _extract_qual_themes(interviews: list[dict[str, Any]], business_question: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Use LLM to extract qualitative themes from interview transcripts."""
+    interview_text = ""
+    for i, interview in enumerate(interviews, 1):
+        interview_text += f"\n--- 访谈 {i}: {interview['twin_name']} 评价 {interview['stimulus_name']} ---\n"
+        interview_text += interview["response"]
+        interview_text += "\n"
+
+    llm_result = chat_json_with_metadata(
+        system_prompt=(
+            "你是一位消费者洞察分析师。请从以下访谈记录中提取关键的定性主题。\n"
+            "返回 JSON 格式，包含以下字段：\n"
+            '{\n'
+            '  "themes": ["主题1", "主题2", ...],\n'
+            '  "per_stimulus": [\n'
+            '    {"stimulus_name": "xxx", "themes": ["主题"], "summary": "一句话摘要", "sentiment": "positive/mixed/negative"},\n'
+            '    ...\n'
+            '  ],\n'
+            '  "overall_insight": "整体洞察一句话"\n'
+            '}'
+        ),
+        user_prompt=(
+            f"研究问题：{business_question}\n\n"
+            f"访谈记录：\n{interview_text}"
+        ),
+    )
+
+    try:
+        return json.loads(str(llm_result["content"])), dict(llm_result["usage"])
+    except json.JSONDecodeError:
+        logger.warning("Failed to parse qual themes JSON, using raw text")
+        raw = str(llm_result["content"])
+        return {
+            "themes": [],
+            "per_stimulus": [],
+            "overall_insight": raw,
+            "raw": raw,
+        }, dict(llm_result["usage"])
+
+
+def _advance_to_midrun_review(payload: dict[str, str]) -> None:
+    run_id = payload["study_run_id"]
+    context = _get_study_context(run_id)
+    selected_twins = _load_selected_twin_personas(context)
+    selected_stimuli = _load_selected_stimuli(context)
+
+    # --- AI Qualitative Research ---
+    logger.info("qual_research_start run_id=%s", run_id)
+
+    interviews: list[dict[str, Any]] = []
+    for twin in selected_twins:
+        for stimulus in selected_stimuli:
+            logger.info("idi_interview twin=%s stimulus=%s", twin["name"], stimulus["name"])
+            interview = _run_idi_interview(
+                twin=twin,
+                stimulus=stimulus,
+                business_question=context["business_question"],
+            )
+            interviews.append(interview)
+
+    # Extract themes
+    themes, theme_usage = _extract_qual_themes(interviews, context["business_question"])
+    qual_usage = _merge_usage(
+        *(interview.get("usage", {}) for interview in interviews),
+        theme_usage,
+    )
+
+    with _connect() as connection:
+        _write_artifact(
+            run_id,
+            "qual_transcript",
+            {
+                "interviews": interviews,
+                "themes": themes,
+                "twin_count": len(selected_twins),
+                "stimulus_count": len(selected_stimuli),
+                "usage": qual_usage,
+            },
+            connection=connection,
+        )
+        logger.info("qual_research_done run_id=%s interviews=%d", run_id, len(interviews))
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE run_step
+                SET status = 'succeeded', ended_at = COALESCE(ended_at, now()), updated_at = now()
+                WHERE study_run_id = %s AND step_type = 'twin_preparation' AND attempt_no = 1
+                """,
+                (run_id,),
+            )
+            cursor.execute(
+                """
+                INSERT INTO run_step (study_run_id, step_type, status, attempt_no, started_at, ended_at)
+                VALUES (%s, 'qual_execution', 'succeeded', 1, now(), now())
+                ON CONFLICT (study_run_id, step_type, attempt_no) DO NOTHING
+                """,
+                (run_id,),
+            )
+            cursor.execute(
+                """
+                INSERT INTO run_step (study_run_id, step_type, status, attempt_no)
+                VALUES (%s, 'quant_execution', 'blocked', 1)
+                ON CONFLICT (study_run_id, step_type, attempt_no) DO NOTHING
+                """,
+                (run_id,),
+            )
+            cursor.execute(
+                """
+                INSERT INTO approval_gate (scope_type, scope_ref_id, approval_type, status)
+                VALUES ('study_run', %s, 'midrun', 'requested')
+                """,
+                (run_id,),
+            )
+            cursor.execute(
+                """
+                UPDATE study_run SET status = 'awaiting_midrun_approval', updated_at = now()
+                WHERE id = %s
+                """,
+                (run_id,),
+            )
+        connection.commit()
+
+
+# ---------------------------------------------------------------------------
+#  Activity 3: complete_study_run — NOW WITH AI QUANT + RECOMMENDATION
+# ---------------------------------------------------------------------------
+
+def _get_qual_artifacts(run_id: str) -> list[dict[str, Any]]:
+    """Fetch qualitative artifacts for a run."""
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT artifact_manifest_json FROM artifact
+                WHERE study_run_id = %s AND artifact_type = 'qual_transcript' AND status = 'ready'
+                ORDER BY created_at DESC LIMIT 1
+                """,
+                (run_id,),
+            )
+            row = cur.fetchone()
+    if row is None:
+        return []
+    manifest = row["artifact_manifest_json"]
+    return manifest.get("interviews", []) if isinstance(manifest, dict) else []
+
+
+def _run_quant_scoring(interviews: list[dict[str, Any]], business_question: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Use LLM to score each stimulus quantitatively based on qual data."""
+    interview_summary = ""
+    for interview in interviews:
+        interview_summary += f"\n[{interview['twin_name']} → {interview['stimulus_name']}]\n"
+        interview_summary += interview["response"][:500] + "\n"
+
+    llm_result = chat_json_with_metadata(
+        system_prompt=(
+            "你是一位消费者研究定量分析师。基于定性访谈结果，对每个产品概念进行量化评分。\n"
+            "评分维度：总体偏好（0-100），置信度（high/medium/low），置信度说明。\n"
+            "返回 JSON：\n"
+            '{\n'
+            '  "ranking": [\n'
+            '    {"stimulus_name": "xxx", "score": 75, "confidence": "high", "confidence_label": "82 / 高", "rationale": "评分理由"},\n'
+            '    ...\n'
+            '  ],\n'
+            '  "scoring_methodology": "评分方法简述"\n'
+            '}\n'
+            "按 score 从高到低排列。"
+        ),
+        user_prompt=(
+            f"研究问题：{business_question}\n\n"
+            f"定性访谈数据摘要：\n{interview_summary}"
+        ),
+    )
+
+    try:
+        return json.loads(str(llm_result["content"])), dict(llm_result["usage"])
+    except json.JSONDecodeError:
+        logger.warning("Failed to parse quant scoring JSON")
+        return {
+            "ranking": [],
+            "scoring_methodology": "",
+            "raw": str(llm_result["content"]),
+        }, dict(llm_result["usage"])
+
+
+def _generate_recommendation(
+    qual_themes: dict[str, Any],
+    quant_ranking: dict[str, Any],
+    business_question: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Generate final recommendation based on qual + quant results."""
+    llm_result = chat_json_with_metadata(
+        system_prompt=(
+            "你是一位高级消费者研究顾问。基于定性主题和定量排名，生成最终推荐结论。\n"
+            "返回 JSON：\n"
+            '{\n'
+            '  "winner": "推荐产品名称",\n'
+            '  "confidence_label": "82 / 高",\n'
+            '  "next_action": "建议的下一步行动",\n'
+            '  "supporting_text": "2-3 句话的推荐理由",\n'
+            '  "segment_differences": [\n'
+            '    {"segment": "人群名称", "preference": "偏好产品", "reason": "原因"}\n'
+            '  ]\n'
+            '}'
+        ),
+        user_prompt=(
+            f"研究问题：{business_question}\n\n"
+            f"定性主题：{json.dumps(qual_themes, ensure_ascii=False)}\n\n"
+            f"定量排名：{json.dumps(quant_ranking, ensure_ascii=False)}"
+        ),
+    )
+
+    try:
+        return json.loads(str(llm_result["content"])), dict(llm_result["usage"])
+    except json.JSONDecodeError:
+        logger.warning("Failed to parse recommendation JSON")
+        return {
+            "winner": "未确定",
+            "confidence_label": "-- / 低",
+            "next_action": "需人工复核",
+            "supporting_text": str(llm_result["content"]),
+        }, dict(llm_result["usage"])
+
+
+def _complete_study_run(payload: dict[str, Optional[str]]) -> None:
+    run_id = str(payload["study_run_id"])
+    approved_by = payload.get("approved_by")
+    decision_comment = payload.get("decision_comment")
+    context = _get_study_context(run_id)
+
+    # --- AI Quantitative Scoring ---
+    logger.info("quant_scoring_start run_id=%s", run_id)
+
+    interviews = _get_qual_artifacts(run_id)
+
+    # Get themes from existing artifact
+    qual_themes: dict[str, Any] = {}
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT artifact_manifest_json FROM artifact
+                WHERE study_run_id = %s AND artifact_type = 'qual_transcript' AND status = 'ready'
+                ORDER BY created_at DESC LIMIT 1
+                """,
+                (run_id,),
+            )
+            row = cur.fetchone()
+            if row and isinstance(row["artifact_manifest_json"], dict):
+                qual_themes = row["artifact_manifest_json"].get("themes", {})
+
+    quant_result, quant_usage = _run_quant_scoring(interviews, context["business_question"])
+    quant_result["usage"] = quant_usage
+    logger.info("quant_scoring_done run_id=%s", run_id)
+
+    # --- AI Recommendation ---
+    logger.info("recommendation_start run_id=%s", run_id)
+    recommendation, recommendation_usage = _generate_recommendation(
+        qual_themes,
+        quant_result,
+        context["business_question"],
+    )
+    recommendation["usage"] = recommendation_usage
+    logger.info("recommendation_done run_id=%s", run_id)
+
+    replay_manifest = _build_replay_manifest(
+        context=context,
+        qual_themes=qual_themes,
+        quant_ranking=quant_result,
+        recommendation=recommendation,
+    )
+    management_summary = _build_management_summary(
+        context=context,
+        qual_themes=qual_themes,
+        quant_ranking=quant_result,
+        recommendation=recommendation,
+    )
+
+    # --- State machine transitions ---
+    with _connect() as connection:
+        _write_artifact(run_id, "quant_ranking", quant_result, connection=connection)
+        _write_artifact(run_id, "recommendation", recommendation, connection=connection)
+        _write_artifact(run_id, "replay", replay_manifest, connection=connection)
+        _write_artifact(run_id, "summary", management_summary, connection=connection)
+        _write_formatted_artifact(
+            run_id,
+            "report",
+            {
+                "title": f"{context.get('business_question', 'AIpersona 研究报告')} 管理层简报",
+                "html": _build_report_html(
+                    context=context,
+                    management_summary=management_summary,
+                    quant_ranking=quant_result,
+                ),
+                "summary": management_summary,
+            },
+            artifact_format="html",
+            storage_uri="inline://html",
+            connection=connection,
+        )
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE approval_gate
+                SET status = 'approved', approved_by = %s, decision_comment = %s, updated_at = now()
+                WHERE scope_type = 'study_run' AND scope_ref_id = %s
+                  AND approval_type = 'midrun' AND status = 'requested'
+                """,
+                (approved_by, decision_comment, run_id),
+            )
+            cursor.execute(
+                """
+                UPDATE run_step
+                SET status = 'running', started_at = COALESCE(started_at, now()), updated_at = now()
+                WHERE study_run_id = %s AND step_type = 'quant_execution' AND attempt_no = 1
+                """,
+                (run_id,),
+            )
+            cursor.execute(
+                """
+                UPDATE run_step
+                SET status = 'succeeded', ended_at = COALESCE(ended_at, now()), updated_at = now()
+                WHERE study_run_id = %s AND step_type = 'quant_execution' AND attempt_no = 1
+                """,
+                (run_id,),
+            )
+            cursor.execute(
+                """
+                INSERT INTO run_step (study_run_id, step_type, status, attempt_no, started_at, ended_at)
+                VALUES (%s, 'synthesis', 'succeeded', 1, now(), now())
+                ON CONFLICT (study_run_id, step_type, attempt_no) DO NOTHING
+                """,
+                (run_id,),
+            )
+            cursor.execute(
+                """
+                UPDATE study_run
+                SET status = 'succeeded', ended_at = COALESCE(ended_at, now()), updated_at = now()
+                WHERE id = %s
+                RETURNING study_id
+                """,
+                (run_id,),
+            )
+            row = cursor.fetchone()
+            if row is not None:
+                cursor.execute(
+                    """
+                    UPDATE study SET status = 'completed', updated_at = now()
+                    WHERE id = %s
+                    """,
+                    (row["study_id"],),
+                )
+        connection.commit()
+
+
+# ---------------------------------------------------------------------------
+#  Temporal activity wrappers
+# ---------------------------------------------------------------------------
+
+@activity.defn
+async def mark_run_running(payload: dict[str, str]) -> None:
+    await asyncio.to_thread(_mark_run_running, payload)
+
+
+@activity.defn
+async def advance_to_midrun_review(payload: dict[str, str]) -> None:
+    try:
+        await asyncio.to_thread(_advance_to_midrun_review, payload)
+    except LLMRequestError as exc:
+        raise ApplicationError(str(exc), type="llm_transient_error", non_retryable=False) from exc
+
+
+@activity.defn
+async def complete_study_run(payload: dict[str, Optional[str]]) -> None:
+    try:
+        await asyncio.to_thread(_complete_study_run, payload)
+    except LLMRequestError as exc:
+        raise ApplicationError(str(exc), type="llm_transient_error", non_retryable=False) from exc

@@ -1,0 +1,344 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 14px;
+  line-height: 1.5;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: rgba(99, 102, 241, 0.30);
+  color: #ffffff;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+/* ═══════════════════════════════════════════
+   MQDS Glass Panels
+   ═══════════════════════════════════════════ */
+
+.glass-panel {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: var(--radius-panel);
+  position: relative;
+}
+
+/* Card variants — add as secondary class on glass-panel */
+.glass-panel--accent {
+  border-color: rgba(99, 102, 241, 0.30);
+  border-top-color: rgba(99, 102, 241, 0.40);
+}
+
+.glass-panel--warning {
+  border-color: rgba(241, 196, 15, 0.30);
+  border-top-color: rgba(241, 196, 15, 0.40);
+}
+
+.glass-panel--action {
+  border-color: rgba(255, 107, 43, 0.30);
+  border-top-color: rgba(255, 107, 43, 0.40);
+}
+
+.glass-panel--danger {
+  border-color: rgba(231, 76, 60, 0.30);
+  border-top-color: rgba(231, 76, 60, 0.40);
+}
+
+/* Inner card — lighter weight, smaller radius */
+.inner-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-card);
+  transition: background var(--duration-fast) var(--ease-default);
+}
+
+.inner-card:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* ═══════════════════════════════════════════
+   MQDS Buttons
+   ═══════════════════════════════════════════ */
+
+/* Primary CTA — accent solid */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border-radius: var(--radius-btn);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  border: none;
+  background: var(--color-accent);
+  color: #FFFFFF;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-default);
+}
+
+.btn-primary:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.25);
+}
+
+.btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Secondary — ghost */
+.btn-secondary,
+.mqds-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border-radius: var(--radius-btn);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-default);
+}
+
+.btn-secondary:hover,
+.mqds-btn:hover {
+  background: rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.btn-secondary:disabled,
+.mqds-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Accent ghost — indigo tint */
+.btn-accent {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: var(--radius-btn);
+  font-size: 0.75rem;
+  font-weight: 500;
+  border: 1px solid rgba(99, 102, 241, 0.30);
+  background: rgba(99, 102, 241, 0.05);
+  color: var(--color-accent);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-default);
+}
+
+.btn-accent:hover {
+  background: rgba(99, 102, 241, 0.12);
+}
+
+/* Warning ghost — yellow tint */
+.btn-warning {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: var(--radius-btn);
+  font-size: 0.75rem;
+  font-weight: 500;
+  border: 1px solid rgba(241, 196, 15, 0.30);
+  background: rgba(241, 196, 15, 0.05);
+  color: var(--color-warning);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-default);
+}
+
+.btn-warning:hover {
+  background: rgba(241, 196, 15, 0.12);
+}
+
+/* Action ghost — orange tint */
+.btn-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: var(--radius-btn);
+  font-size: 0.75rem;
+  font-weight: 500;
+  border: 1px solid rgba(255, 107, 43, 0.30);
+  background: rgba(255, 107, 43, 0.05);
+  color: var(--color-action);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-default);
+}
+
+.btn-action:hover {
+  background: rgba(255, 107, 43, 0.12);
+}
+
+/* Chip — small inline */
+.btn-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.65rem;
+  font-weight: 500;
+  border: none;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-default);
+}
+
+.btn-chip:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text);
+}
+
+/* Legacy alias */
+.mqds-btn-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border-radius: var(--radius-btn);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  border: none;
+  background: #fff;
+  color: #000;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-default);
+}
+
+.mqds-btn-cta:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+/* ═══════════════════════════════════════════
+   MQDS Eyebrow Label
+   ═══════════════════════════════════════════ */
+
+.eyebrow {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+
+/* ═══════════════════════════════════════════
+   MQDS Tab Bar
+   ═══════════════════════════════════════════ */
+
+.tab-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-btn);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.tab-item {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-default);
+}
+
+.tab-item:hover {
+  color: var(--color-text);
+}
+
+.tab-item--active {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text);
+}
+
+/* ═══════════════════════════════════════════
+   Scrollbar
+   ═══════════════════════════════════════════ */
+
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ═══════════════════════════════════════════
+   Focus & Accessibility
+   ═══════════════════════════════════════════ */
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-glow);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

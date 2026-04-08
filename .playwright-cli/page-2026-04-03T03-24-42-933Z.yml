@@ -1,0 +1,67 @@
+- generic [ref=e6]:
+  - complementary [ref=e7]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - img [ref=e11]
+        - generic [ref=e18]:
+          - generic [ref=e19]: AIpersona
+          - generic [ref=e20]: Demo Deck
+      - button "收起导航栏" [ref=e21] [cursor=pointer]:
+        - img [ref=e22]
+    - navigation [ref=e24]:
+      - link "Workbench Primary canvas" [ref=e25] [cursor=pointer]:
+        - /url: /workbench/dc503a47-f194-4511-a599-42d1d0ef91fa
+        - img [ref=e26]
+        - generic [ref=e31]:
+          - generic [ref=e32]: Workbench
+          - generic [ref=e33]: Primary canvas
+      - link "Compare Parallel review" [ref=e34] [cursor=pointer]:
+        - /url: /compare?studyId=dc503a47-f194-4511-a599-42d1d0ef91fa
+        - img [ref=e35]
+        - generic [ref=e38]:
+          - generic [ref=e39]: Compare
+          - generic [ref=e40]: Parallel review
+      - link "Twins Registry" [ref=e41] [cursor=pointer]:
+        - /url: /twins?studyId=dc503a47-f194-4511-a599-42d1d0ef91fa
+        - img [ref=e42]
+        - generic [ref=e46]:
+          - generic [ref=e47]: Twins
+          - generic [ref=e48]: Registry
+    - generic [ref=e49]:
+      - generic [ref=e50]:
+        - generic [ref=e51]: Workspace
+        - generic [ref=e52]:
+          - img [ref=e53]
+          - text: Precision shell online
+        - paragraph [ref=e58]: Keep the top-level navigation stable while the content plane swaps between routes.
+      - generic [ref=e59]:
+        - generic [ref=e60]:
+          - img [ref=e61]
+          - text: Mode
+        - generic [ref=e65]: Workbench / Compare / Twins
+  - generic [ref=e66]:
+    - banner [ref=e67]:
+      - generic [ref=e68]:
+        - generic [ref=e69]:
+          - generic [ref=e70]: Precision Laboratory
+          - generic [ref=e71]:
+            - heading "Workbench" [level=1] [ref=e72]
+            - generic [ref=e73]: Shell
+          - paragraph [ref=e74]: Main execution surface for the demo workspace, designed for intake, orchestration, and result reading.
+        - generic [ref=e75]:
+          - generic [ref=e76]: Runtime-first shell
+          - generic [ref=e77]: Layout live
+      - generic [ref=e79]:
+        - generic [ref=e80]: Active Study Session
+        - generic [ref=e81]: dc503a47-f194-4511-a599-42d1d0ef91fa
+        - generic [ref=e82]:
+          - link "Workbench" [ref=e83] [cursor=pointer]:
+            - /url: /workbench/dc503a47-f194-4511-a599-42d1d0ef91fa
+          - link "Compare" [ref=e84] [cursor=pointer]:
+            - /url: /compare?studyId=dc503a47-f194-4511-a599-42d1d0ef91fa
+          - link "Twins" [ref=e85] [cursor=pointer]:
+            - /url: /twins?studyId=dc503a47-f194-4511-a599-42d1d0ef91fa
+    - main [ref=e86]:
+      - generic [ref=e90]:
+        - img [ref=e91]
+        - generic [ref=e93]: Runtime loading

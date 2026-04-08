@@ -1,0 +1,55 @@
+/* MQDS v4.1 — Dark Mode "Glass Terminal" */
+:root {
+  /* ── Background Layers ── */
+  --color-bg: #030305;
+  --color-rail: rgba(255, 255, 255, 0.02);
+  --color-panel: rgba(255, 255, 255, 0.03);
+  --color-panel-strong: rgba(255, 255, 255, 0.06);
+  --color-surface-elevated: rgba(255, 255, 255, 0.08);
+
+  /* ── Borders ── */
+  --color-line: rgba(255, 255, 255, 0.08);
+  --color-line-strong: rgba(255, 255, 255, 0.15);
+  --glass-highlight: rgba(255, 255, 255, 0.15);
+
+  /* ── Text Hierarchy ── */
+  --color-text: #FFFFFF;
+  --color-muted: #9CA3AF;
+  --color-tertiary: #6B7280;
+
+  /* ── Functional Colors ── */
+  --color-accent: #6366F1;
+  --color-accent-soft: rgba(99, 102, 241, 0.10);
+  --color-action: #FF6B2B;
+  --color-action-soft: rgba(255, 107, 43, 0.10);
+  --color-success: #2ECC71;
+  --color-success-soft: rgba(46, 204, 113, 0.10);
+  --color-warning: #F1C40F;
+  --color-warning-soft: rgba(241, 196, 15, 0.10);
+  --color-danger: #E74C3C;
+  --color-danger-soft: rgba(231, 76, 60, 0.10);
+
+  /* ── Shadows & Glow ── */
+  --shadow-panel: none;
+  --shadow-glow: 0 0 0 1px rgba(99, 102, 241, 0.12), 0 0 44px rgba(99, 102, 241, 0.08);
+  --shadow-warm: 0 0 40px rgba(255, 107, 43, 0.06);
+
+  /* ── Radius ── */
+  --radius-sm: 6px;
+  --radius-btn: 10px;
+  --radius-card: 14px;
+  --radius-panel: 20px;
+  /* Legacy aliases */
+  --radius-xl2: 20px;
+  --radius-xl3: 20px;
+
+  /* ── Typography ── */
+  --font-sans: 'Inter', 'PingFang SC', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: 'Inter', 'PingFang SC', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', ui-monospace, monospace;
+
+  /* ── Timing ── */
+  --duration-fast: 200ms;
+  --duration-normal: 350ms;
+  --ease-default: cubic-bezier(0.2, 0.8, 0.2, 1);
+}

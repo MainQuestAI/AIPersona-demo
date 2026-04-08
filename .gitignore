@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.turbo/
+.DS_Store
+.env
+.env.*
+.venv/
+.venv*/
+venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+coverage/
+playwright-report/
+test-results/
+.gstack/

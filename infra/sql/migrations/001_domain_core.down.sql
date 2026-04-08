@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS artifact;
+DROP TABLE IF EXISTS approval_gate;
+DROP TABLE IF EXISTS run_step;
+DROP TABLE IF EXISTS study_run;
+DROP TABLE IF EXISTS study_plan;
+DROP TABLE IF EXISTS study_plan_version;
+DROP TABLE IF EXISTS twin_version;
+DROP TABLE IF EXISTS consumer_twin;
+DROP TABLE IF EXISTS study;
