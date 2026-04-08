@@ -113,6 +113,14 @@ export function WorkbenchPage({
     });
   }, [baseEvents]);
 
+  const skipPlayback = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+    }
+    setIsPaused(false);
+    setVisibleCount(baseEvents.length);
+  }, [baseEvents.length]);
+
   useEffect(() => {
     if (!playback || isPaused || visibleCount >= baseEvents.length) return;
     const delay = visibleCount === 0 ? PLAYBACK_INITIAL_DELAY : PLAYBACK_STEP_DELAY;
@@ -274,6 +282,11 @@ export function WorkbenchPage({
               visibleCount={visibleCount}
               isStreaming={isPlaybackActive}
               onCardAction={handleCardAction}
+              playbackProgress={{
+                current: Math.min(visibleCount, baseEvents.length),
+                total: baseEvents.length,
+              }}
+              onSkipPlayback={isPlaybackActive ? skipPlayback : undefined}
             />
           </div>
           <div className="flex-none pt-3">

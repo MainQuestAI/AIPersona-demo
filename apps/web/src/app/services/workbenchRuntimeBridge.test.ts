@@ -463,4 +463,60 @@ describe('workbenchRuntimeBridge', () => {
     expect(scenario.twinCatalog).toEqual([]);
     expect(scenario.libraryRecords).toEqual([]);
   });
+
+  it('builds mid-run review decision support from runtime counts instead of leaving an empty approval card', () => {
+    const scenario = getPitchScenarioBundle({
+      ...baseProjection,
+      current_run: {
+        id: 'run-mid',
+        study_plan_version_id: 'version-1',
+        status: 'awaiting_midrun_approval',
+        workflow_id: 'workflow-mid',
+        workflow_run_id: 'exec-mid',
+        step_count: 3,
+        approval_status: 'requested',
+        steps: [],
+        created_at: '2026-04-03T10:10:00+08:00',
+        updated_at: '2026-04-03T10:20:00+08:00',
+      },
+      artifacts: [
+        {
+          id: 'artifact-qual',
+          artifact_type: 'qual_transcript',
+          format: 'json',
+          status: 'ready',
+          created_at: '2026-04-03T10:11:00+08:00',
+          manifest: {
+            themes: {
+              themes: ['情绪安全感', '功能可信度', '日常饮用适配度'],
+            },
+            interviews: [{ id: 'i1' }, { id: 'i2' }, { id: 'i3' }, { id: 'i4' }],
+          },
+        },
+      ],
+      twins: [
+        { id: 'twin-a' },
+        { id: 'twin-b' },
+      ] as any,
+      stimuli: [
+        { id: 'stimulus-a', name: '清泉+' },
+        { id: 'stimulus-b', name: '初元优养' },
+        { id: 'stimulus-c', name: '安纯' },
+      ] as any,
+    });
+
+    expect(scenario.midrunReviewPanel?.metrics?.[0]).toMatchObject({
+      label: '目标人群覆盖',
+      value: '2 / 2 已覆盖',
+    });
+    expect(scenario.midrunReviewPanel?.metrics?.[1]).toMatchObject({
+      label: '访谈轮次',
+      value: '4 轮已完成',
+    });
+    expect(scenario.midrunReviewPanel?.focusThemes).toContain('情绪安全感');
+    expect(scenario.conversationEvents.find((event) => event.type === 'midrun_review_card')).toMatchObject({
+      decisionSummary: expect.stringContaining('当前定性阶段'),
+      recommendation: expect.stringContaining('继续进入定量排序'),
+    });
+  });
 });

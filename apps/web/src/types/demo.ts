@@ -174,7 +174,17 @@ export interface MidrunReviewEvent {
   type: 'midrun_review_card';
   title: string;
   body: string[];
+  decisionSummary?: string;
+  metrics?: MidrunReviewMetric[];
+  focusThemes?: string[];
+  recommendation?: string;
   actions: string[];
+}
+
+export interface MidrunReviewMetric {
+  label: string;
+  value: string;
+  tone?: 'neutral' | 'positive' | 'warning';
 }
 
 export interface RecommendationEvent {
@@ -259,7 +269,10 @@ export interface ResultPanelData {
 export interface MidrunReviewPanelData {
   title: string;
   body: string[];
+  decisionSummary?: string;
+  metrics?: MidrunReviewMetric[];
   focusThemes: string[];
+  recommendation?: string;
   actions: string[];
 }
 

@@ -160,6 +160,15 @@ export const completedMidrunReviewEvent: MidrunReviewEvent = {
     '两个目标人群的主要主题已趋于稳定。',
     '是否继续进入 定量排序？',
   ],
+  decisionSummary: '当前定性阶段已经形成足够稳定的判断信号，可以把资源投入到下一轮定量排序，而不是继续延长访谈。',
+  metrics: [
+    { label: '目标人群覆盖', value: '2 / 2 已覆盖', tone: 'positive' },
+    { label: '访谈轮次', value: '6 轮已完成', tone: 'positive' },
+    { label: '稳定主题', value: '2 个已浮现', tone: 'positive' },
+    { label: '证据沉淀', value: '3 份中间产物', tone: 'neutral' },
+  ],
+  focusThemes: ['功能可信度', '情绪安全感'],
+  recommendation: '建议继续进入定量排序；如果要调整刺激物范围，应在本节点暂停，而不是继续追加访谈。',
   actions: ['继续定量排序', '暂停编辑'],
 };
 
@@ -202,7 +211,15 @@ export const completedMidrunReviewPanel: MidrunReviewPanelData = {
     '两个目标人群的主要主题已趋于稳定。',
     '是否继续进入 定量排序？',
   ],
+  decisionSummary: '当前定性阶段已经形成足够稳定的判断信号，可以把资源投入到下一轮定量排序，而不是继续延长访谈。',
+  metrics: [
+    { label: '目标人群覆盖', value: '2 / 2 已覆盖', tone: 'positive' },
+    { label: '访谈轮次', value: '6 轮已完成', tone: 'positive' },
+    { label: '稳定主题', value: '2 个已浮现', tone: 'positive' },
+    { label: '证据沉淀', value: '3 份中间产物', tone: 'neutral' },
+  ],
   focusThemes: ['功能可信度', '情绪安全感'],
+  recommendation: '建议继续进入定量排序；如果要调整刺激物范围，应在本节点暂停，而不是继续追加访谈。',
   actions: ['继续定量排序', '暂停编辑'],
 };
 

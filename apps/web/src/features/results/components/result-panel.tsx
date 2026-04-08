@@ -55,6 +55,54 @@ export function ResultPanel({
               <p key={line}>{line}</p>
             ))}
           </div>
+          {scenario.midrunReviewPanel?.decisionSummary ? (
+            <div className="mt-4 rounded-panel border border-warning/20 bg-warning/10 px-4 py-3 text-sm leading-6 text-text">
+              {scenario.midrunReviewPanel.decisionSummary}
+            </div>
+          ) : null}
+          {scenario.midrunReviewPanel?.metrics && scenario.midrunReviewPanel.metrics.length > 0 ? (
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              {scenario.midrunReviewPanel.metrics.map((metric) => (
+                <div key={metric.label} className="inner-card px-3 py-3 text-sm">
+                  <div className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-tertiary">
+                    {metric.label}
+                  </div>
+                  <div className={`mt-1 font-semibold ${
+                    metric.tone === 'positive'
+                      ? 'text-accent'
+                      : metric.tone === 'warning'
+                        ? 'text-warning'
+                        : 'text-text'
+                  }`}>
+                    {metric.value}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {scenario.midrunReviewPanel?.focusThemes.length ? (
+            <div className="mt-4">
+              <div className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-tertiary">
+                当前重点主题
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {scenario.midrunReviewPanel.focusThemes.map((theme) => (
+                  <span
+                    key={theme}
+                    className="rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-xs font-medium text-accent"
+                  >
+                    {theme}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {scenario.midrunReviewPanel?.recommendation ? (
+            <div className="mt-4 rounded-panel border border-line bg-surface/75 px-4 py-3 text-sm leading-6 text-muted">
+              <span className="font-semibold text-text">当前建议：</span>
+              {scenario.midrunReviewPanel.recommendation}
+            </div>
+          ) : null}
           <div className="mt-3 flex flex-wrap gap-2">
             {scenario.midrunReviewPanel?.actions.map((action) => (
               <button key={action} type="button" className="btn-warning" onClick={() => onCardAction?.(action)}>

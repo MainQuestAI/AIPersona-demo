@@ -10,6 +10,11 @@ import { RecommendationCard } from './cards/recommendation-card';
 import { RerunSuggestionCard } from './cards/rerun-suggestion-card';
 import { StudyCompleteCard } from './cards/study-complete-card';
 
+type PlaybackProgress = {
+  current: number;
+  total: number;
+};
+
 function AgentMessageCard({
   title,
   body,
@@ -76,7 +81,8 @@ function generateTimestamp(index: number): string {
   // Start at 10:02, increment by 2-8 minutes per step
   const baseMinutes = 10 * 60 + 2;
   const offsets = [0, 1, 6, 22, 29, 30, 31, 33, 38, 42, 47, 51, 55, 58, 62, 66];
-  const offset = index < offsets.length ? offsets[index] : offsets.length + index * 3;
+  const lastOffset = offsets[offsets.length - 1] ?? 0;
+  const offset = index < offsets.length ? offsets[index] : lastOffset + (index - offsets.length + 1) * 3;
   const totalMinutes = baseMinutes + offset;
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
@@ -101,15 +107,22 @@ export function ConversationThread({
   visibleCount,
   isStreaming,
   onCardAction,
+  playbackProgress,
+  onSkipPlayback,
 }: {
   events: ConversationEvent[];
   visibleCount?: number;
   isStreaming?: boolean;
   onCardAction?: (action: string) => void;
+  playbackProgress?: PlaybackProgress;
+  onSkipPlayback?: () => void;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
   const visible = visibleCount != null ? events.slice(0, visibleCount) : events;
   const nextEvent = visibleCount != null && visibleCount < events.length ? events[visibleCount] : null;
+  const progressPercent = playbackProgress && playbackProgress.total > 0
+    ? Math.min(100, Math.max(0, (playbackProgress.current / playbackProgress.total) * 100))
+    : 0;
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -188,14 +201,35 @@ export function ConversationThread({
               <span className="text-xs font-medium text-muted">研究助手</span>
             </div>
             <div className="glass-panel flex items-center gap-3 p-4">
-              <div className="flex gap-1">
+              <div className="flex gap-1 self-start pt-1">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" style={{ animationDelay: '0ms' }} />
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" style={{ animationDelay: '200ms' }} />
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" style={{ animationDelay: '400ms' }} />
               </div>
-              <span className="text-sm text-muted">
-                {nextEvent ? (PLAYBACK_STATUS[nextEvent.type] ?? '处理中...') : '处理中...'}
-              </span>
+              <div className="min-w-0 flex-1 space-y-3">
+                <span className="block text-sm text-muted">
+                  {nextEvent ? (PLAYBACK_STATUS[nextEvent.type] ?? '处理中...') : '处理中...'}
+                </span>
+                {playbackProgress ? (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-3 text-[0.65rem] font-medium text-tertiary">
+                      <span>{`已完成 ${playbackProgress.current} / ${playbackProgress.total} 个关键节点`}</span>
+                      <span>{`${Math.round(progressPercent)}%`}</span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-surfaceElevated">
+                      <div
+                        className="h-full rounded-full bg-accent transition-[width] duration-300"
+                        style={{ width: `${progressPercent}%` }}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+              {onSkipPlayback ? (
+                <button type="button" onClick={onSkipPlayback} className="btn-secondary self-start !px-3 !py-1.5 !text-[0.65rem]">
+                  跳过回放
+                </button>
+              ) : null}
             </div>
           </div>
         </motion.div>

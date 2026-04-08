@@ -1,6 +1,7 @@
 import type {
   DemoScenarioBundle,
   DemoScenarioId,
+  MidrunReviewMetric,
   RunStepStatus,
   TimelineStage,
   TimelineStep,
@@ -156,6 +157,108 @@ function formatCostLabel(
     return `实际 ${actualCost}`;
   }
   return '成本待核算';
+}
+
+function formatCoverageLabel(count: number): string {
+  if (count <= 0) {
+    return '待补充';
+  }
+  return `${count} / ${count} 已覆盖`;
+}
+
+function buildMidrunReviewSupport(
+  projection: WorkbenchProjection,
+  fallback: {
+    title: string;
+    body: string[];
+    actions: string[];
+    focusThemes?: string[];
+    decisionSummary?: string;
+    recommendation?: string;
+  },
+) {
+  const qualArtifact = getLatestArtifact(projection, 'qual_transcript');
+  const qualManifest = (qualArtifact?.manifest ?? {}) as Record<string, any>;
+  const twinCount = getTwinCount(projection);
+  const stimulusCount = getStimulusCount(projection);
+  const artifactCount = getArtifactCount(projection);
+  const themeLabels = Array.isArray(qualManifest.themes?.themes)
+    ? qualManifest.themes.themes.map(String)
+    : (fallback.focusThemes ?? []);
+  const sessionCount = Array.isArray(qualManifest.interviews)
+    ? qualManifest.interviews.length
+    : twinCount > 0 && stimulusCount > 0
+      ? twinCount * stimulusCount
+      : 0;
+  const stableThemeCount = themeLabels.length;
+  const resolvedGroupCount = twinCount || projection.study.target_groups?.length || 0;
+  const metrics: MidrunReviewMetric[] = [
+    {
+      label: '目标人群覆盖',
+      value: formatCoverageLabel(resolvedGroupCount),
+      tone: resolvedGroupCount > 0 ? 'positive' : 'warning',
+    },
+    {
+      label: '访谈轮次',
+      value: sessionCount > 0 ? `${sessionCount} 轮已完成` : '待累计',
+      tone: sessionCount > 0 ? 'positive' : 'warning',
+    },
+    {
+      label: '稳定主题',
+      value: stableThemeCount > 0 ? `${stableThemeCount} 个已浮现` : '待形成',
+      tone: stableThemeCount > 0 ? 'positive' : 'warning',
+    },
+    {
+      label: '证据沉淀',
+      value: artifactCount > 0 ? `${artifactCount} 份中间产物` : '待沉淀',
+      tone: artifactCount > 0 ? 'neutral' : 'warning',
+    },
+  ];
+
+  return {
+    title: fallback.title,
+    body: stableThemeCount > 0
+      ? [
+          `当前定性探索已覆盖 ${resolvedGroupCount || '全部'} 个目标人群，并围绕 ${stimulusCount || '当前'} 个刺激物形成稳定主题。`,
+          '现在继续追加访谈的边际价值已经下降，更适合进入定量排序验证强弱差异。',
+          '如果要缩减或替换刺激物，应在本节点暂停，而不是继续推进。',
+        ]
+      : fallback.body,
+    decisionSummary: fallback.decisionSummary
+      ?? `当前定性阶段已经形成可执行判断，建议在此节点做进入定量排序的业务决策，而不是继续延长探索。`,
+    metrics,
+    focusThemes: themeLabels.slice(0, 4),
+    recommendation: fallback.recommendation
+      ?? '建议继续进入定量排序；如果需要改刺激物或目标人群，先在本节点暂停并调整计划。',
+    actions: fallback.actions,
+  };
+}
+
+function enrichScenarioForProjection(
+  projection: WorkbenchProjection,
+  scenario: DemoScenarioBundle,
+): DemoScenarioBundle {
+  const midrunFallback = scenario.midrunReviewPanel;
+  const enrichedEvents = scenario.conversationEvents.map((event) => {
+    if (event.type !== 'midrun_review_card') {
+      return event;
+    }
+    return {
+      ...event,
+      ...buildMidrunReviewSupport(projection, event),
+    };
+  });
+
+  return {
+    ...scenario,
+    conversationEvents: enrichedEvents,
+    midrunReviewPanel: midrunFallback
+      ? {
+          ...midrunFallback,
+          ...buildMidrunReviewSupport(projection, midrunFallback),
+        }
+      : undefined,
+  };
 }
 
 function buildArtifactScenarioBundle(
@@ -712,7 +815,7 @@ export function buildConversationEventsForProjection(
   projection: WorkbenchProjection,
 ): DemoScenarioBundle['conversationEvents'] {
   const phase = getRuntimePhase(projection);
-  const scenario = getScenarioBundle(selectScenarioIdForProjection(projection));
+  const scenario = getPitchScenarioBundle(projection);
 
   if (phase === 'draft' || phase === 'pending_approval' || phase === 'ready_to_run') {
     return scenario.conversationEvents.slice(0, 2);
@@ -732,6 +835,7 @@ export function buildConversationEventsForProjection(
 export function getPitchScenarioBundle(
   projection: WorkbenchProjection,
 ): DemoScenarioBundle {
-  return buildArtifactScenarioBundle(projection as StudyDetailProjection)
+  const scenario = buildArtifactScenarioBundle(projection as StudyDetailProjection)
     ?? getScenarioBundle(selectScenarioIdForProjection(projection));
+  return enrichScenarioForProjection(projection, scenario);
 }
