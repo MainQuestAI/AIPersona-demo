@@ -84,6 +84,8 @@ def chat_with_metadata(
         logger.exception("llm_call_failed model=%s prompt_len=%d", model, len(user_prompt))
         raise LLMRequestError(f"LLM request failed for model {model}") from exc
 
+    if not response.choices:
+        raise LLMRequestError(f"LLM returned empty choices for model {model}")
     content = response.choices[0].message.content or ""
     usage = _usage_to_dict(response, model)
     logger.info(

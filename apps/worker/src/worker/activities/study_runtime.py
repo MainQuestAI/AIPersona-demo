@@ -402,29 +402,39 @@ def _run_idi_interview(
         f"测试产品概念：\n{stimulus_desc}"
     )
 
-    llm_result = chat_with_metadata(
-        system_prompt=str(twin["system_prompt"]),
-        user_prompt=(
-            f"你现在参加一个消费者产品调研。研究员会向你展示一个新饮品概念。\n\n"
-            f"产品概念信息：\n{stimulus_desc}\n\n"
-            f"请分享你看到这个产品概念后的：\n"
-            f"1. 第一反应和感受\n"
-            f"2. 你觉得这个产品适合谁？为什么？\n"
-            f"3. 你自己会不会考虑购买？什么因素最影响你的决定？\n"
-            f"4. 这个产品有什么让你担心或不确定的地方？\n"
-            f"5. 如果让你给建议，你觉得这个产品可以怎么改进？"
-        ),
-        temperature=0.8,
-    )
-
-    return {
-        "twin_id": twin["id"],
-        "twin_name": twin["name"],
-        "stimulus_id": stimulus["id"],
-        "stimulus_name": stimulus["name"],
-        "response": llm_result["content"],
-        "usage": llm_result["usage"],
-    }
+    try:
+        llm_result = chat_with_metadata(
+            system_prompt=str(twin["system_prompt"]),
+            user_prompt=(
+                f"你现在参加一个消费者产品调研。研究员会向你展示一个新饮品概念。\n\n"
+                f"产品概念信息：\n{stimulus_desc}\n\n"
+                f"请分享你看到这个产品概念后的：\n"
+                f"1. 第一反应和感受\n"
+                f"2. 你觉得这个产品适合谁？为什么？\n"
+                f"3. 你自己会不会考虑购买？什么因素最影响你的决定？\n"
+                f"4. 这个产品有什么让你担心或不确定的地方？\n"
+                f"5. 如果让你给建议，你觉得这个产品可以怎么改进？"
+            ),
+            temperature=0.8,
+        )
+        return {
+            "twin_id": twin["id"],
+            "twin_name": twin["name"],
+            "stimulus_id": stimulus["id"],
+            "stimulus_name": stimulus["name"],
+            "response": llm_result["content"],
+            "usage": llm_result["usage"],
+        }
+    except Exception as exc:
+        logger.warning("idi_interview_failed twin=%s stimulus=%s error=%s", twin["name"], stimulus["name"], exc)
+        return {
+            "twin_id": twin["id"],
+            "twin_name": twin["name"],
+            "stimulus_id": stimulus["id"],
+            "stimulus_name": stimulus["name"],
+            "response": f"（访谈未能完成：{type(exc).__name__}）",
+            "usage": {},
+        }
 
 
 def _extract_qual_themes(interviews: list[dict[str, Any]], business_question: str) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -435,24 +445,28 @@ def _extract_qual_themes(interviews: list[dict[str, Any]], business_question: st
         interview_text += interview["response"]
         interview_text += "\n"
 
-    llm_result = chat_json_with_metadata(
-        system_prompt=(
-            "你是一位消费者洞察分析师。请从以下访谈记录中提取关键的定性主题。\n"
-            "返回 JSON 格式，包含以下字段：\n"
-            '{\n'
-            '  "themes": ["主题1", "主题2", ...],\n'
-            '  "per_stimulus": [\n'
-            '    {"stimulus_name": "xxx", "themes": ["主题"], "summary": "一句话摘要", "sentiment": "positive/mixed/negative"},\n'
-            '    ...\n'
-            '  ],\n'
-            '  "overall_insight": "整体洞察一句话"\n'
-            '}'
-        ),
-        user_prompt=(
-            f"研究问题：{business_question}\n\n"
-            f"访谈记录：\n{interview_text}"
-        ),
-    )
+    try:
+        llm_result = chat_json_with_metadata(
+            system_prompt=(
+                "你是一位消费者洞察分析师。请从以下访谈记录中提取关键的定性主题。\n"
+                "返回 JSON 格式，包含以下字段：\n"
+                '{\n'
+                '  "themes": ["主题1", "主题2", ...],\n'
+                '  "per_stimulus": [\n'
+                '    {"stimulus_name": "xxx", "themes": ["主题"], "summary": "一句话摘要", "sentiment": "positive/mixed/negative"},\n'
+                '    ...\n'
+                '  ],\n'
+                '  "overall_insight": "整体洞察一句话"\n'
+                '}'
+            ),
+            user_prompt=(
+                f"研究问题：{business_question}\n\n"
+                f"访谈记录：\n{interview_text}"
+            ),
+        )
+    except Exception as exc:
+        logger.warning("qual_themes_llm_failed error=%s", exc)
+        return {"themes": [], "per_stimulus": [], "overall_insight": "主题提取失败"}, {}
 
     try:
         return json.loads(str(llm_result["content"])), dict(llm_result["usage"])
@@ -580,25 +594,29 @@ def _run_quant_scoring(interviews: list[dict[str, Any]], business_question: str)
         interview_summary += f"\n[{interview['twin_name']} → {interview['stimulus_name']}]\n"
         interview_summary += interview["response"][:500] + "\n"
 
-    llm_result = chat_json_with_metadata(
-        system_prompt=(
-            "你是一位消费者研究定量分析师。基于定性访谈结果，对每个产品概念进行量化评分。\n"
-            "评分维度：总体偏好（0-100），置信度（high/medium/low），置信度说明。\n"
-            "返回 JSON：\n"
-            '{\n'
-            '  "ranking": [\n'
-            '    {"stimulus_name": "xxx", "score": 75, "confidence": "high", "confidence_label": "82 / 高", "rationale": "评分理由"},\n'
-            '    ...\n'
-            '  ],\n'
-            '  "scoring_methodology": "评分方法简述"\n'
-            '}\n'
-            "按 score 从高到低排列。"
-        ),
-        user_prompt=(
-            f"研究问题：{business_question}\n\n"
-            f"定性访谈数据摘要：\n{interview_summary}"
-        ),
-    )
+    try:
+        llm_result = chat_json_with_metadata(
+            system_prompt=(
+                "你是一位消费者研究定量分析师。基于定性访谈结果，对每个产品概念进行量化评分。\n"
+                "评分维度：总体偏好（0-100），置信度（high/medium/low），置信度说明。\n"
+                "返回 JSON：\n"
+                '{\n'
+                '  "ranking": [\n'
+                '    {"stimulus_name": "xxx", "score": 75, "confidence": "high", "confidence_label": "82 / 高", "rationale": "评分理由"},\n'
+                '    ...\n'
+                '  ],\n'
+                '  "scoring_methodology": "评分方法简述"\n'
+                '}\n'
+                "按 score 从高到低排列。"
+            ),
+            user_prompt=(
+                f"研究问题：{business_question}\n\n"
+                f"定性访谈数据摘要：\n{interview_summary}"
+            ),
+        )
+    except Exception as exc:
+        logger.warning("quant_scoring_llm_failed error=%s", exc)
+        return {"ranking": [], "scoring_methodology": "评分失败"}, {}
 
     try:
         return json.loads(str(llm_result["content"])), dict(llm_result["usage"])
@@ -617,26 +635,35 @@ def _generate_recommendation(
     business_question: str,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Generate final recommendation based on qual + quant results."""
-    llm_result = chat_json_with_metadata(
-        system_prompt=(
-            "你是一位高级消费者研究顾问。基于定性主题和定量排名，生成最终推荐结论。\n"
-            "返回 JSON：\n"
-            '{\n'
-            '  "winner": "推荐产品名称",\n'
-            '  "confidence_label": "82 / 高",\n'
-            '  "next_action": "建议的下一步行动",\n'
-            '  "supporting_text": "2-3 句话的推荐理由",\n'
-            '  "segment_differences": [\n'
-            '    {"segment": "人群名称", "preference": "偏好产品", "reason": "原因"}\n'
-            '  ]\n'
-            '}'
-        ),
-        user_prompt=(
-            f"研究问题：{business_question}\n\n"
-            f"定性主题：{json.dumps(qual_themes, ensure_ascii=False)}\n\n"
-            f"定量排名：{json.dumps(quant_ranking, ensure_ascii=False)}"
-        ),
-    )
+    try:
+        llm_result = chat_json_with_metadata(
+            system_prompt=(
+                "你是一位高级消费者研究顾问。基于定性主题和定量排名，生成最终推荐结论。\n"
+                "返回 JSON：\n"
+                '{\n'
+                '  "winner": "推荐产品名称",\n'
+                '  "confidence_label": "82 / 高",\n'
+                '  "next_action": "建议的下一步行动",\n'
+                '  "supporting_text": "2-3 句话的推荐理由",\n'
+                '  "segment_differences": [\n'
+                '    {"segment": "人群名称", "preference": "偏好产品", "reason": "原因"}\n'
+                '  ]\n'
+                '}'
+            ),
+            user_prompt=(
+                f"研究问题：{business_question}\n\n"
+                f"定性主题：{json.dumps(qual_themes, ensure_ascii=False)}\n\n"
+                f"定量排名：{json.dumps(quant_ranking, ensure_ascii=False)}"
+            ),
+        )
+    except Exception as exc:
+        logger.warning("recommendation_llm_failed error=%s", exc)
+        return {
+            "winner": "未确定",
+            "confidence_label": "-- / 低",
+            "next_action": "需人工复核",
+            "supporting_text": "推荐结论生成失败",
+        }, {}
 
     try:
         return json.loads(str(llm_result["content"])), dict(llm_result["usage"])

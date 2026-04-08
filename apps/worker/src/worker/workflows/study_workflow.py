@@ -11,6 +11,8 @@ if workflow is not None:
     with workflow.unsafe.imports_passed_through():
         from datetime import timedelta
 
+        from temporalio.common import RetryPolicy
+
         from worker.activities import (
             advance_to_midrun_review,
             complete_study_run,
@@ -25,8 +27,9 @@ if workflow is not None:
         async def _run_impl(self, payload: dict[str, str]) -> str:
             workflow.logger.info("study_workflow_started %s", payload)
             timeout = timedelta(seconds=600)
-            await workflow.execute_activity(mark_run_running, payload, start_to_close_timeout=timeout)
-            await workflow.execute_activity(advance_to_midrun_review, payload, start_to_close_timeout=timeout)
+            retry = RetryPolicy(maximum_attempts=3, backoff_coefficient=2.0)
+            await workflow.execute_activity(mark_run_running, payload, start_to_close_timeout=timeout, retry_policy=retry)
+            await workflow.execute_activity(advance_to_midrun_review, payload, start_to_close_timeout=timeout, retry_policy=retry)
             try:
                 await workflow.wait_condition(
                     lambda: self._resume_requested,
@@ -45,6 +48,7 @@ if workflow is not None:
                 complete_study_run,
                 completion_payload,
                 start_to_close_timeout=timeout,
+                retry_policy=retry,
             )
             workflow.logger.info("study_workflow_completed %s", completion_payload)
             return "study-workflow-completed"

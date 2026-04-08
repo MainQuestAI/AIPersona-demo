@@ -327,23 +327,26 @@ async def chat_with_study(
         base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
     )
 
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "你是 AI 消费者研究工作台的研究助手。用户正在查看一项消费者研究的结果。\n"
-                    "基于以下研究数据回答用户的问题。回答要专业、简洁，引用具体数据。\n"
-                    "如果研究数据不足以回答问题，诚实说明。\n\n"
-                    f"研究数据：\n{research_context}"
-                ),
-            },
-            {"role": "user", "content": payload.message},
-        ],
-        max_tokens=2048,
-        temperature=0.7,
-    )
-
-    reply = response.choices[0].message.content or "抱歉，AI 暂时无法回答您的问题。"
-    return {"reply": reply}
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "你是 AI 消费者研究工作台的研究助手。用户正在查看一项消费者研究的结果。\n"
+                        "基于以下研究数据回答用户的问题。回答要专业、简洁，引用具体数据。\n"
+                        "如果研究数据不足以回答问题，诚实说明。\n\n"
+                        f"研究数据：\n{research_context}"
+                    ),
+                },
+                {"role": "user", "content": payload.message},
+            ],
+            max_tokens=2048,
+            temperature=0.7,
+        )
+        reply = response.choices[0].message.content if response.choices else None
+        return {"reply": reply or "抱歉，AI 暂时无法回答您的问题。"}
+    except Exception as exc:
+        logger.warning("chat_llm_error study_id=%s error=%s", study_id, exc)
+        return {"reply": "AI 服务暂时不可用，请稍后再试。"}
