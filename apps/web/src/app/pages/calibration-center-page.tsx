@@ -80,12 +80,12 @@ export function CalibrationCenterPage() {
   return (
     <div className="space-y-6">
       <section className="rounded-panel border border-line bg-panel p-6 shadow-panel">
-        <div className="eyebrow text-accent">Calibration Center</div>
+        <div className="eyebrow text-accent">校准中心</div>
         <h2 className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-text">
-          校准中心壳已进入产品导航
+          校准中心
         </h2>
         <p className="mt-2 text-sm leading-7 text-muted">
-          这里已经按真实 API contract 建好入口。当前返回空集合，意味着 Calibration 功能尚未真正上线，而不是前端自己造了假数据。
+          基准包管理、校准运行、置信度快照和漂移预警。此功能即将在下一版本上线。
         </p>
       </section>
 

@@ -89,12 +89,12 @@ export function StudiesPage() {
       >
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <div className="eyebrow text-accent">Studies</div>
+            <div className="eyebrow text-accent">研究项目</div>
             <h2 className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-text">
-              正式研究项目入口
+              研究项目
             </h2>
             <p className="mt-2 max-w-3xl text-sm leading-7 text-muted">
-              这里是正式 MVP 的 Studies 页面，不再依赖空状态 mock 历史。每一个 Study 都能进入统一的 Study Detail。
+              创建、浏览并进入 AI 消费者研究。每个研究项目都有完整的执行轨迹和产出物。
             </p>
           </div>
           <button type="button" onClick={() => void handleCreate()} className="btn-accent" disabled={creating}>
@@ -113,8 +113,7 @@ export function StudiesPage() {
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="eyebrow text-muted">Study #{study.id}</div>
-                <div className="mt-2 text-lg font-semibold text-text">
+                <div className="text-lg font-semibold text-text">
                   {study.business_question ?? '未命名研究'}
                 </div>
                 <div className="mt-2 text-sm text-muted">

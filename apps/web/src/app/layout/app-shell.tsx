@@ -93,9 +93,9 @@ export function AppShell({ children }: AppShellProps) {
                       {latestStudy.businessQuestion}
                     </div>
                   ) : null}
-                  <div className="flex flex-wrap gap-2">
-                    {location.pathname.startsWith('/studies/')
-                      ? STUDY_DETAIL_VIEWS.map((view) => (
+                  {location.pathname.startsWith('/studies/') ? (
+                    <div className="flex flex-wrap gap-2">
+                      {STUDY_DETAIL_VIEWS.map((view) => (
                         <NavLink
                           key={view.key}
                           to={buildStudyRoute(`/${view.key}`, studyId)}
@@ -110,24 +110,9 @@ export function AppShell({ children }: AppShellProps) {
                         >
                           {view.label}
                         </NavLink>
-                      ))
-                      : APP_ROUTES.map((route) => (
-                      <NavLink
-                        key={route.path}
-                        to={route.path}
-                        className={({ isActive }) =>
-                          [
-                            'rounded-btn border px-3 py-1 eyebrow transition',
-                            isActive
-                              ? 'border-accent/35 bg-accentSoft text-text'
-                              : 'border-line bg-panel text-muted hover:border-accent/35 hover:text-text',
-                          ].join(' ')
-                        }
-                      >
-                        {route.label}
-                      </NavLink>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ) : latestStudy ? (
@@ -136,20 +121,17 @@ export function AppShell({ children }: AppShellProps) {
                   <div className="rounded-btn border border-accent/30 bg-accentSoft px-3 py-1 eyebrow text-accent">
                     最近研究就绪
                   </div>
-                  <div className="rounded-btn border border-line bg-panel px-3 py-1 font-mono text-[0.65rem] tracking-[0.02em] text-muted">
-                    {latestStudy.id}
-                  </div>
+                  {latestStudy.businessQuestion ? (
+                    <div className="max-w-sm truncate text-sm text-muted">
+                      {latestStudy.businessQuestion}
+                    </div>
+                  ) : null}
                   <NavLink
                     to={buildStudyRoute('/workbench', latestStudy.id)}
                     className="btn-accent"
                   >
                     继续上次研究
                   </NavLink>
-                  {latestStudy.businessQuestion ? (
-                    <div className="text-sm text-muted">
-                      {latestStudy.businessQuestion}
-                    </div>
-                  ) : null}
                 </div>
               </div>
             ) : null}

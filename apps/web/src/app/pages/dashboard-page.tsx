@@ -88,13 +88,12 @@ export function DashboardPage() {
         transition={{ duration: 0.3 }}
         className="rounded-panel border border-line bg-panel p-6 shadow-panel"
       >
-        <div className="eyebrow text-accent">Dashboard</div>
+        <div className="eyebrow text-accent">业务总览</div>
         <h2 className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-text">
-          当前已进入可试运行的 MVP 基线
+          欢迎回来
         </h2>
         <p className="mt-2 max-w-3xl text-sm leading-7 text-muted">
-          这里不是展示页面集合，而是当前 Pilot MVP 的真实运行概览。研究数量、Twin 资产、Stimulus 资产和导入任务都来自 API，
-          不是前端静态数据。
+          这是你的 AI 消费者研究工作台。研究项目、数字孪生资产、刺激物和导入任务的实时概览。
         </p>
       </motion.section>
 

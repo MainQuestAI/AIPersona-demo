@@ -1,9 +1,15 @@
 import type { RankingItem } from '@/types/demo';
 
-const LEVEL_COLORS: Record<string, string> = {
+const LEVEL_BAR_COLORS: Record<string, string> = {
   high: 'bg-accent',
   medium: 'bg-warning',
   low: 'bg-danger',
+};
+
+const LEVEL_TEXT_COLORS: Record<string, string> = {
+  high: 'text-accent',
+  medium: 'text-warning',
+  low: 'text-danger',
 };
 
 export function QuantRanking({
@@ -26,13 +32,13 @@ export function QuantRanking({
               </div>
               <div className="text-right">
                 <div className="text-2xl font-semibold text-text">{item.score}</div>
-                <div className="mt-1 eyebrow text-muted">{item.confidenceLabel}</div>
+                <div className={`mt-1 eyebrow ${LEVEL_TEXT_COLORS[item.confidenceLevel] ?? 'text-muted'}`}>{item.confidenceLabel}</div>
               </div>
             </div>
             {/* ScoreBar */}
             <div className="mt-3 h-2 overflow-hidden rounded-full bg-surfaceElevated">
               <div
-                className={`h-full rounded-full transition-[width] duration-500 ${LEVEL_COLORS[item.confidenceLevel] ?? 'bg-accent'}`}
+                className={`h-full rounded-full transition-[width] duration-500 ${LEVEL_BAR_COLORS[item.confidenceLevel] ?? 'bg-accent'}`}
                 style={{ width: `${Math.max((item.score / maxScore) * 100, 4)}%` }}
               />
             </div>

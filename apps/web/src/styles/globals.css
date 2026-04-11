@@ -291,7 +291,6 @@ select {
 .eyebrow {
   font-size: 0.65rem;
   font-weight: 600;
-  text-transform: uppercase;
   letter-spacing: 0.04em;
   line-height: 1;
 }

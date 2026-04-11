@@ -335,15 +335,31 @@ def _build_report_html(
         f"<li>{html.escape(str(item))}</li>"
         for item in management_summary.get("evidence_points", [])
     )
+    style = (
+        "<style>"
+        "body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Noto Sans SC',sans-serif;"
+        "max-width:800px;margin:40px auto;padding:0 24px;color:#1a1a1a;line-height:1.7;}"
+        "h1{font-size:1.6em;border-bottom:2px solid #6366f1;padding-bottom:12px;margin-bottom:24px;}"
+        "h2{font-size:1.2em;color:#6366f1;margin-top:32px;}"
+        "h3{font-size:1em;color:#555;margin-top:24px;}"
+        "p{margin:8px 0;}"
+        "ul,ol{padding-left:24px;}"
+        "li{margin:6px 0;padding:8px 12px;background:#f8f9fa;border-radius:6px;list-style-position:inside;}"
+        ".footer{margin-top:48px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:0.8em;color:#9ca3af;}"
+        "</style>"
+    )
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
     return (
-        "<article>"
+        f"<!DOCTYPE html><html><head><meta charset='utf-8'><title>研究报告</title>{style}</head><body>"
         f"<h1>{html.escape(str(context.get('business_question', 'AIpersona 研究报告')))}</h1>"
         f"<h2>{html.escape(str(management_summary.get('headline', '管理层摘要')))}</h2>"
         f"<p>{html.escape(str(management_summary.get('supporting_text', '')))}</p>"
         f"<h3>推荐下一步</h3><p>{html.escape(str(management_summary.get('next_action', '待确认')))}</p>"
         f"<h3>关键证据</h3><ul>{evidence_items}</ul>"
         f"<h3>排序结果</h3><ol>{ranking_items}</ol>"
-        "</article>"
+        f"<div class='footer'>AI Consumer Research Report · 生成于 {timestamp} · AIpersona</div>"
+        "</body></html>"
     )
 
 
