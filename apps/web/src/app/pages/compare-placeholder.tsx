@@ -209,7 +209,7 @@ function ConceptCard({
         <button type="button" onClick={() => onAction(`查看 ${ranking.label} 详细报告`)} className="btn-accent">
           查看详情
         </button>
-        <button type="button" onClick={() => onAction(`导出 ${ranking.label} 数据`)} className="btn-secondary !px-3 !py-1.5 !text-xs">
+        <button type="button" onClick={() => onAction(`导出 ${ranking.label} 数据`)} className="btn-secondary-sm">
           <Download className="h-3.5 w-3.5" />
           导出
         </button>

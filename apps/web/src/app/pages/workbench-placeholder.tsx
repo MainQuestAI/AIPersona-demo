@@ -150,7 +150,7 @@ function EmptyWorkbenchState({
                 type="button"
                 onClick={() => setConfigOpen((v) => !v)}
                 disabled={seedLoading}
-                className="btn-secondary !px-3 !py-1.5 !text-xs"
+                className="btn-secondary-sm"
               >
                 {seedLoading ? '加载中...' : configOpen ? '收起配置' : '配置研究'}
               </button>

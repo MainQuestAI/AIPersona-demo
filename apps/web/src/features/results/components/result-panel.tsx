@@ -144,18 +144,45 @@ export function ResultPanel({
   }
 
   if (runStatus === 'running' || runStatus === 'queued') {
+    const steps = projection.current_run?.steps ?? [];
+    const STAGE_ORDER = [
+      { type: 'twin_preparation', label: '定性访谈' },
+      { type: 'qual_execution', label: '主题提取' },
+      { type: 'quant_execution', label: 'AI 综合评估' },
+      { type: 'synthesis', label: '推荐结论' },
+    ];
+    const stepMap = new Map(steps.map((s) => [s.step_type, s.status]));
+    const runningStep = steps.find((s) => s.status === 'running');
+    const currentLabel = STAGE_ORDER.find((s) => s.type === runningStep?.step_type)?.label ?? '准备中';
+
     return (
       <section className="space-y-4">
         <div className="glass-panel glass-panel--action p-5">
           <div className="eyebrow text-action">研究执行中</div>
           <div className="mt-2 text-lg font-semibold tracking-[-0.02em] text-text">
-            当前正在生成定性与定量结果
+            {currentLabel}
           </div>
-          <div className="mt-3 space-y-2 text-sm leading-6 text-muted">
-            <p>研究已经进入运行阶段，系统会继续生成定性主题、量化排序和推荐结论。</p>
-            <p>现在最适合查看输入源、孪生资产和可信度约束，先确认这次研究跑在正确轨道上。</p>
+          <div className="mt-4 space-y-2">
+            {STAGE_ORDER.map((stage) => {
+              const status = stepMap.get(stage.type);
+              const isDone = status === 'succeeded';
+              const isRunning = status === 'running';
+              return (
+                <div key={stage.type} className="flex items-center gap-3">
+                  <div className={`h-2.5 w-2.5 rounded-full ${
+                    isDone ? 'bg-accent shadow-[0_0_6px_rgba(99,102,241,0.5)]'
+                    : isRunning ? 'bg-action animate-pulse shadow-[0_0_6px_rgba(255,107,43,0.5)]'
+                    : 'bg-surfaceElevated'
+                  }`} />
+                  <span className={`text-sm ${isDone ? 'text-accent' : isRunning ? 'text-text font-medium' : 'text-tertiary'}`}>
+                    {stage.label}
+                  </span>
+                  {isDone ? <span className="text-[0.6rem] text-accent">完成</span> : null}
+                </div>
+              );
+            })}
           </div>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-4 flex flex-wrap gap-2">
             <button type="button" onClick={onOpenInputs} className="btn-chip">查看输入源</button>
             <button type="button" onClick={onOpenTwins} className="btn-chip">查看孪生溯源</button>
             <button type="button" onClick={onOpenTrust} className="btn-chip">查看可信度</button>

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { PlanApprovalEvent } from '@/types/demo';
 
 export function PlanApprovalCard({
@@ -9,6 +10,18 @@ export function PlanApprovalCard({
 }) {
   const primaryAction = event.actions[0];
   const secondaryActions = event.actions.slice(1);
+  const [confirming, setConfirming] = useState(false);
+
+  function handlePrimaryClick() {
+    if (!primaryAction) return;
+    if (primaryAction === '批准计划' && !confirming) {
+      setConfirming(true);
+      setTimeout(() => setConfirming(false), 3000);
+      return;
+    }
+    setConfirming(false);
+    onAction?.(primaryAction);
+  }
 
   return (
     <article className="glass-panel glass-panel--action p-5">
@@ -40,10 +53,10 @@ export function PlanApprovalCard({
           <button
             key={primaryAction}
             type="button"
-            onClick={() => onAction?.(primaryAction)}
-            className="btn-primary"
+            onClick={handlePrimaryClick}
+            className={confirming ? 'btn-warning' : 'btn-primary'}
           >
-            {primaryAction}
+            {confirming ? '确认批准？' : primaryAction}
           </button>
         ) : null}
         {secondaryActions.map((action) => (

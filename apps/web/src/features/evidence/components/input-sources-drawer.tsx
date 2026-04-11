@@ -1,5 +1,5 @@
 import type { LibraryRecord, StudyInputsSnapshot } from '@/types/demo';
-import { useDialogAccessibility } from './use-dialog-accessibility';
+import { DrawerShell } from './drawer-shell';
 
 export function InputSourcesDrawer({
   open,
@@ -14,22 +14,8 @@ export function InputSourcesDrawer({
   libraryRecords: LibraryRecord[];
   onClose: () => void;
 }) {
-  const dialogRef = useDialogAccessibility(open, onClose);
-
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 z-40">
-      <div className="absolute inset-0 backdrop-blur-sm" style={{ background: 'rgba(3,3,5,0.60)' }} onClick={onClose} />
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label="输入源面板"
-        tabIndex={-1}
-        className="absolute inset-y-0 right-0 w-full max-w-xl overflow-y-auto border-l border-line p-6 backdrop-blur-xl"
-        style={{ background: 'rgba(3,3,5,0.95)' }}
-      >
+    <DrawerShell open={open} onClose={onClose} ariaLabel="输入源面板">
         <div className="flex items-center justify-between gap-3">
           <div>
             <div className="eyebrow text-muted">输入源面板</div>
@@ -64,7 +50,6 @@ export function InputSourcesDrawer({
             </div>
           </div>
         </div>
-      </div>
-    </div>
+    </DrawerShell>
   );
 }

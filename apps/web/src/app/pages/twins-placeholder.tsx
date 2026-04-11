@@ -84,7 +84,7 @@ function TwinProfileCard({ twin, onAction }: { twin: TwinProfile; onAction: (act
           <MessageCircle className="h-3.5 w-3.5" />
           与孪生对话
         </button>
-        <button type="button" onClick={() => onAction(`配置 ${twin.name}`)} className="btn-secondary !px-3 !py-1.5 !text-xs">
+        <button type="button" onClick={() => onAction(`配置 ${twin.name}`)} className="btn-secondary-sm">
           <Settings2 className="h-3.5 w-3.5" />
           配置参数
         </button>

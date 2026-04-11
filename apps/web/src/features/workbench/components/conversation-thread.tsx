@@ -226,7 +226,7 @@ export function ConversationThread({
                 ) : null}
               </div>
               {onSkipPlayback ? (
-                <button type="button" onClick={onSkipPlayback} className="btn-secondary self-start !px-3 !py-1.5 !text-[0.65rem]">
+                <button type="button" onClick={onSkipPlayback} className="btn-secondary-sm self-start">
                   跳过回放
                 </button>
               ) : null}

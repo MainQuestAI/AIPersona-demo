@@ -14,6 +14,7 @@ import {
   buildStudySessionBoard,
   getPitchScenarioBundle,
 } from '@/app/services/workbenchRuntimeBridge';
+import { DrawerShell } from '@/features/evidence/components/drawer-shell';
 import { InputSourcesDrawer } from '@/features/evidence/components/input-sources-drawer';
 import { ReplayModal } from '@/features/evidence/components/replay-modal';
 import { TrustDrawer } from '@/features/evidence/components/trust-drawer';
@@ -44,6 +45,7 @@ export function WorkbenchPage({
   const openReplay = useWorkbenchUiStore((state) => state.openReplay);
   const closeReplay = useWorkbenchUiStore((state) => state.closeReplay);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [resultDrawerOpen, setResultDrawerOpen] = useState(false);
   const messageIdRef = useRef(1000);
 
   const scenario = useMemo(() => getPitchScenarioBundle(projection), [projection]);
@@ -262,7 +264,7 @@ export function WorkbenchPage({
             <button
               type="button"
               onClick={() => setDetailsOpen((v) => !v)}
-              className="btn-secondary !px-2.5 !py-1.5 !text-[0.65rem]"
+              className="btn-secondary-sm"
             >
               <Info className="h-3.5 w-3.5" />
               研究详情
@@ -301,6 +303,16 @@ export function WorkbenchPage({
             />
           </div>
           <div className="flex-none pt-3">
+            {/* Small screen: show results button */}
+            <div className="mb-2 lg:hidden">
+              <button
+                type="button"
+                onClick={() => setResultDrawerOpen(true)}
+                className="btn-accent w-full text-center"
+              >
+                查看研究结果
+              </button>
+            </div>
             <PromptComposer suggestions={promptSuggestions} onSend={handleUserSend} />
           </div>
         </div>
@@ -331,6 +343,24 @@ export function WorkbenchPage({
         onClose={closeDrawer}
       />
       <ReplayModal open={replayOpen} replay={scenario.replay} onClose={closeReplay} />
+
+      {/* Small-screen result drawer */}
+      <DrawerShell open={resultDrawerOpen} onClose={() => setResultDrawerOpen(false)} ariaLabel="研究结果">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div className="eyebrow text-muted">研究结果</div>
+          <button type="button" onClick={() => setResultDrawerOpen(false)} className="btn-secondary">关闭</button>
+        </div>
+        <ResultPanel
+          projection={projection}
+          scenario={scenario}
+          onOpenCompare={() => { setResultDrawerOpen(false); navigate(buildStudyRoute('/compare', projection.study.id)); }}
+          onOpenReplay={() => { setResultDrawerOpen(false); openReplay(); }}
+          onOpenTrust={() => { setResultDrawerOpen(false); openDrawer('trust'); }}
+          onOpenTwins={() => { setResultDrawerOpen(false); navigate(buildStudyRoute('/twins', projection.study.id)); }}
+          onOpenInputs={() => { setResultDrawerOpen(false); openDrawer('inputs'); }}
+          onCardAction={handleCardAction}
+        />
+      </DrawerShell>
     </div>
   );
 }

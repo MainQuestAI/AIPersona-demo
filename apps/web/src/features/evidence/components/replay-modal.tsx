@@ -1,5 +1,5 @@
 import type { ReplayData } from '@/types/demo';
-import { useDialogAccessibility } from './use-dialog-accessibility';
+import { ModalShell } from './drawer-shell';
 
 export function ReplayModal({
   open,
@@ -10,22 +10,8 @@ export function ReplayModal({
   replay: ReplayData;
   onClose: () => void;
 }) {
-  const dialogRef = useDialogAccessibility(open, onClose);
-
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 backdrop-blur-sm" style={{ background: 'rgba(3,3,5,0.70)' }} onClick={onClose} />
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label="研究回放"
-        tabIndex={-1}
-        className="absolute inset-6 z-10 mx-auto flex max-w-5xl flex-col rounded-panel border border-line p-6 backdrop-blur-xl"
-        style={{ background: 'rgba(3,3,5,0.95)' }}
-      >
+    <ModalShell open={open} onClose={onClose} ariaLabel="研究回放">
         <div className="flex items-center justify-between gap-3">
           <div>
             <div className="eyebrow text-muted">研究回放</div>
@@ -49,7 +35,7 @@ export function ReplayModal({
             ) : null}
           </div>
         ) : null}
-        <div className="mt-6 grid flex-1 gap-4 overflow-auto md:grid-cols-2">
+        <div className="mt-6 grid gap-4 md:grid-cols-2">
           {replay.stages.map((stage) => (
             <div key={stage.id} className="glass-panel p-5">
               <div className="eyebrow text-accent">{stage.label}</div>
@@ -76,7 +62,6 @@ export function ReplayModal({
             </div>
           ))}
         </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }
