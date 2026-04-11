@@ -867,3 +867,65 @@ class PostgresStudyRuntimeRepository:
         if hasattr(value, "isoformat"):
             return value.isoformat()
         return value
+
+    # ------------------------------------------------------------------
+    #  Agent messages
+    # ------------------------------------------------------------------
+
+    def get_study_messages(
+        self,
+        study_id: str,
+        *,
+        after_id: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                if after_id:
+                    cursor.execute(
+                        """
+                        SELECT * FROM study_message
+                        WHERE study_id = %s AND created_at > (
+                            SELECT created_at FROM study_message WHERE id = %s
+                        )
+                        ORDER BY created_at ASC
+                        LIMIT %s
+                        """,
+                        (study_id, after_id, limit),
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        SELECT * FROM study_message
+                        WHERE study_id = %s
+                        ORDER BY created_at ASC
+                        LIMIT %s
+                        """,
+                        (study_id, limit),
+                    )
+                rows = cursor.fetchall()
+        return [self._serialize_record(row) for row in rows]
+
+    def create_study_message(
+        self,
+        study_id: str,
+        role: str,
+        content: str,
+        message_type: str = "text",
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        from psycopg.types.json import Json as PgJson
+
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO study_message (study_id, role, content, message_type, metadata_json)
+                    VALUES (%s, %s, %s, %s, %s)
+                    RETURNING *
+                    """,
+                    (study_id, role, content, message_type, PgJson(metadata or {})),
+                )
+                row = cursor.fetchone()
+            connection.commit()
+        return self._serialize_record(row)

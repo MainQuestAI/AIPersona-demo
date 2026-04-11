@@ -56,6 +56,25 @@ class TemporalStudyRuntimeWorkflowGateway:
 
         return self._run_coroutine(runner())
 
+    def start_agent_study_run(self, run_id: str, study_id: str, plan_version_id: str) -> dict[str, str | None]:
+        workflow_id = f"agent-run-{run_id}"
+
+        async def runner() -> dict[str, str | None]:
+            client = await Client.connect(self._temporal_target, namespace=self._namespace)
+            handle = await client.start_workflow(
+                "AgentStudyWorkflow",
+                {
+                    "study_id": study_id,
+                    "study_run_id": run_id,
+                    "study_plan_version_id": plan_version_id,
+                },
+                id=workflow_id,
+                task_queue=self._task_queue,
+            )
+            return {"workflow_id": workflow_id, "workflow_run_id": handle.result_run_id}
+
+        return self._run_coroutine(runner())
+
     def resume_study_run(self, workflow_id: str, approved_by: str, decision_comment: str | None) -> None:
         async def runner() -> None:
             client = await Client.connect(self._temporal_target, namespace=self._namespace)

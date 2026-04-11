@@ -384,3 +384,172 @@ async def chat_with_study(
     except Exception as exc:
         logger.warning("chat_llm_error study_id=%s error=%s", study_id, exc)
         return {"reply": "AI 服务暂时不可用，请稍后再试。"}
+
+
+# ---------------------------------------------------------------------------
+#  Agent-driven conversation endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/studies/{study_id}/agent/messages")
+async def get_agent_messages(
+    study_id: str,
+    after: str | None = None,
+    service: StudyRuntimeService = Depends(get_study_runtime_service),
+) -> dict[str, Any]:
+    """Poll for agent conversation messages."""
+    messages = service.repository.get_study_messages(study_id, after_id=after)
+    return {"messages": messages}
+
+
+class AgentReplyRequest(BaseModel):
+    action_id: str = ""
+    action: str = Field(min_length=1, max_length=4000)
+    comment: str | None = None
+
+
+@router.post("/studies/{study_id}/agent/reply")
+async def reply_to_agent(
+    request: Request,
+    study_id: str,
+    payload: AgentReplyRequest,
+    service: StudyRuntimeService = Depends(get_study_runtime_service),
+) -> dict[str, Any]:
+    """User replies to an agent action_request or sends a free-form message."""
+    # Write user message
+    service.repository.create_study_message(
+        study_id, "user", payload.action,
+        message_type="action_response" if payload.action_id else "text",
+        metadata={"action_id": payload.action_id} if payload.action_id else {},
+    )
+
+    bundle = service.get_study_bundle(study_id)
+    current_run = None
+    for run in bundle.get("study_runs", []):
+        if run.get("status") in ("running", "queued", "awaiting_midrun_approval"):
+            current_run = run
+            break
+
+    # Handle action-based replies
+    if payload.action_id == "midrun_review" and current_run:
+        workflow_id = current_run.get("workflow_id")
+        if workflow_id:
+            service.gateway.resume_study_run(
+                workflow_id=workflow_id,
+                approved_by="boss",
+                decision_comment=payload.comment or payload.action,
+            )
+            return {"status": "resumed"}
+
+    if payload.action_id == "post_study":
+        # Post-study actions handled by frontend (download, navigate)
+        return {"status": "ok"}
+
+    # Free-form chat: call LLM with study context
+    if not payload.action_id:
+        projection = build_workbench_projection(bundle)
+        artifacts = projection.get("artifacts", [])
+        context_parts = [f"研究问题：{projection['study'].get('business_question', '未知')}"]
+        for artifact in artifacts:
+            manifest = artifact.get("manifest", {})
+            a_type = artifact.get("artifact_type", "")
+            if a_type == "qual_transcript":
+                themes = manifest.get("themes", {})
+                if isinstance(themes, dict):
+                    context_parts.append(f"定性主题：{json.dumps(themes.get('themes', []), ensure_ascii=False)}")
+                    context_parts.append(f"整体洞察：{themes.get('overall_insight', '')}")
+            elif a_type == "quant_ranking":
+                for r in manifest.get("ranking", []):
+                    context_parts.append(f"排名：{r.get('stimulus_name', '')} 得分 {r.get('score', 0)}")
+            elif a_type == "recommendation":
+                context_parts.append(f"推荐：{manifest.get('winner', '')} — {manifest.get('supporting_text', '')}")
+
+        # Get recent messages for multi-turn context
+        recent_messages = service.repository.get_study_messages(study_id)
+        history = [
+            {"role": m["role"] if m["role"] != "agent" else "assistant", "content": m["content"]}
+            for m in recent_messages[-10:]
+            if m["role"] in ("user", "agent") and m.get("message_type") in ("text", "action_response")
+        ]
+
+        settings = request.app.state.settings
+        api_key = settings.dashscope_api_key
+        model = settings.dashscope_model
+        if not api_key:
+            reply_text = "AI 对话服务未配置。"
+        else:
+            client = OpenAI(api_key=api_key, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
+            try:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": (
+                            "你是 AI 消费者研究助手。基于研究数据回答问题，专业、简洁，引用具体数据。\n\n"
+                            + "\n".join(context_parts)
+                        )},
+                        *history,
+                        {"role": "user", "content": payload.action},
+                    ],
+                    max_tokens=2048,
+                    temperature=0.7,
+                )
+                reply_text = (response.choices[0].message.content if response.choices else None) or "暂时无法回答。"
+            except Exception as exc:
+                logger.warning("agent_chat_error study_id=%s error=%s", study_id, exc)
+                reply_text = "AI 服务暂时不可用，请稍后再试。"
+
+        service.repository.create_study_message(study_id, "agent", reply_text)
+        return {"status": "ok", "reply": reply_text}
+
+    return {"status": "ok"}
+
+
+@router.post("/studies/{study_id}/agent/start")
+async def start_agent(
+    study_id: str,
+    service: StudyRuntimeService = Depends(get_study_runtime_service),
+) -> dict[str, Any]:
+    """Start agent-driven study execution."""
+    bundle = service.get_study_bundle(study_id)
+    study = bundle.get("study", {})
+    plan = bundle.get("study_plan", {})
+
+    # Find approved version
+    versions = bundle.get("study_plan_versions", [])
+    approved_version = None
+    for v in versions:
+        if v.get("approval_status") in ("approved", "active"):
+            approved_version = v
+            break
+    if not approved_version:
+        # Auto-approve: submit + approve if in draft/pending state
+        latest_version = versions[0] if versions else None
+        if latest_version:
+            v_id = str(latest_version["id"])
+            status = latest_version.get("approval_status", "draft")
+            if status == "draft":
+                service.submit_plan_for_approval(SubmitPlanForApprovalCommand(study_id=study_id, version_id=v_id, requested_by="boss"))
+            service.approve_plan(ApprovalDecision(study_id=study_id, version_id=v_id, approved_by="boss", decision_comment="Auto-approved by agent"))
+            approved_version = latest_version
+
+    if not approved_version:
+        raise HTTPException(status_code=400, detail="No plan version available")
+
+    # Create run
+    run = service.start_run(
+        StartRunCommand(
+            study_id=study_id,
+            study_plan_version_id=str(approved_version["id"]),
+            requested_by="boss",
+        ),
+        workflow_type="agent",
+    )
+
+    # Post initial agent message
+    service.repository.create_study_message(
+        study_id, "agent",
+        f"你好！我是你的 AI 研究助手。\n\n"
+        f"我已收到你的研究问题：**{study.get('business_question', '未命名')}**\n\n"
+        f"正在准备研究执行环境...",
+    )
+
+    return {"status": "started", "run_id": str(run.get("id", ""))}

@@ -203,9 +203,9 @@ class StudyRuntimeService:
             decision.decision_comment,
         )
 
-    def start_run(self, command: StartRunCommand) -> dict[str, Any]:
+    def start_run(self, command: StartRunCommand, *, workflow_type: str = "standard") -> dict[str, Any]:
         version = self._require_plan_version(command.study_id, command.study_plan_version_id)
-        if version["approval_status"] != "approved":
+        if version["approval_status"] not in ("approved", "active"):
             raise AppError(
                 "Study run can only start from an approved plan version",
                 code="plan_not_approved",
@@ -216,11 +216,18 @@ class StudyRuntimeService:
             command.study_plan_version_id,
             command.requested_by,
         )
-        workflow_ref = self._workflow_gateway.start_study_run(
-            run["id"],
-            command.study_id,
-            command.study_plan_version_id,
-        )
+        if workflow_type == "agent":
+            workflow_ref = self._workflow_gateway.start_agent_study_run(
+                run["id"],
+                command.study_id,
+                command.study_plan_version_id,
+            )
+        else:
+            workflow_ref = self._workflow_gateway.start_study_run(
+                run["id"],
+                command.study_id,
+                command.study_plan_version_id,
+            )
         self._repository.bind_workflow(
             run["id"],
             workflow_ref["workflow_id"] or f"study-run-{run['id']}",
