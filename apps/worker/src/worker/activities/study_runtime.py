@@ -933,3 +933,38 @@ async def complete_study_run(payload: dict[str, Optional[str]]) -> None:
         await asyncio.to_thread(_complete_study_run, payload)
     except LLMRequestError as exc:
         raise ApplicationError(str(exc), type="llm_transient_error", non_retryable=False) from exc
+
+
+# ---------------------------------------------------------------------------
+#  Agent-driven activities
+# ---------------------------------------------------------------------------
+
+def _run_agent_plan_to_midrun(payload: dict[str, str]) -> None:
+    from worker.agent import StudyAgent
+    agent = StudyAgent(study_id=payload["study_id"], run_id=payload["study_run_id"])
+    agent.run_plan_to_midrun()
+
+
+def _run_agent_midrun_to_complete(payload: dict[str, Optional[str]]) -> None:
+    from worker.agent import StudyAgent
+    agent = StudyAgent(study_id=payload["study_id"], run_id=payload["study_run_id"])
+    agent.run_midrun_to_complete(
+        approved_by=payload.get("approved_by"),
+        decision_comment=payload.get("decision_comment"),
+    )
+
+
+@activity.defn
+async def agent_plan_to_midrun(payload: dict[str, str]) -> None:
+    try:
+        await asyncio.to_thread(_run_agent_plan_to_midrun, payload)
+    except LLMRequestError as exc:
+        raise ApplicationError(str(exc), type="llm_transient_error", non_retryable=False) from exc
+
+
+@activity.defn
+async def agent_midrun_to_complete(payload: dict[str, Optional[str]]) -> None:
+    try:
+        await asyncio.to_thread(_run_agent_midrun_to_complete, payload)
+    except LLMRequestError as exc:
+        raise ApplicationError(str(exc), type="llm_transient_error", non_retryable=False) from exc

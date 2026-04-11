@@ -33,10 +33,12 @@ async def run_worker() -> None:
     from temporalio.worker import Worker
     from worker.activities import (
         advance_to_midrun_review,
+        agent_midrun_to_complete,
+        agent_plan_to_midrun,
         complete_study_run,
         mark_run_running,
     )
-    from worker.workflows import LegacyStudyWorkflow, StudyWorkflow
+    from worker.workflows import AgentStudyWorkflow, LegacyStudyWorkflow, StudyWorkflow
 
     client = await Client.connect(
         settings.temporal_address,
@@ -50,8 +52,10 @@ async def run_worker() -> None:
             mark_run_running,
             advance_to_midrun_review,
             complete_study_run,
+            agent_plan_to_midrun,
+            agent_midrun_to_complete,
         ],
-        workflows=[StudyWorkflow, LegacyStudyWorkflow],
+        workflows=[StudyWorkflow, LegacyStudyWorkflow, AgentStudyWorkflow],
     )
     await worker.run()
 

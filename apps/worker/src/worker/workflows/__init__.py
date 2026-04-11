@@ -1,3 +1,3 @@
-from worker.workflows.study_workflow import LegacyStudyWorkflow, StudyWorkflow
+from worker.workflows.study_workflow import AgentStudyWorkflow, LegacyStudyWorkflow, StudyWorkflow
 
-__all__ = ["StudyWorkflow", "LegacyStudyWorkflow"]
+__all__ = ["AgentStudyWorkflow", "LegacyStudyWorkflow", "StudyWorkflow"]
