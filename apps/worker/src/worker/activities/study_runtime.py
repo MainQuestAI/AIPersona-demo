@@ -389,52 +389,90 @@ def _run_idi_interview(
     stimulus: dict[str, Any],
     business_question: str,
 ) -> dict[str, Any]:
-    """Run a single AI IDI interview: twin persona answers about a stimulus."""
+    """Run a multi-turn AI IDI interview: interviewer asks → twin answers → probe → answer → summary."""
     stimulus_desc = str(stimulus["description"])
-    interviewer_system = (
-        "你是一位专业的消费者研究访谈员。你正在进行一对一深度访谈（IDI），"
-        "探索消费者对一个新产品概念的真实态度。\n"
-        "请提出 3-4 个开放性问题，引导被访者表达对产品概念的第一反应、"
-        "购买意愿、顾虑和建议。每个问题后等待被访者回答。\n"
-        "最后总结本次访谈的关键发现。\n\n"
+    twin_system = str(twin["system_prompt"])
+    interviewer_base = (
+        "你是一位消费者研究访谈员，正在对被访者做一对一深度访谈。\n"
         f"研究问题：{business_question}\n"
-        f"被访者概况：{twin['name']}\n"
-        f"测试产品概念：\n{stimulus_desc}"
+        f"测试产品概念：\n{stimulus_desc}\n\n"
     )
 
+    fallback = {
+        "twin_id": twin["id"],
+        "twin_name": twin["name"],
+        "stimulus_id": stimulus["id"],
+        "stimulus_name": stimulus["name"],
+        "response": "（访谈未能完成）",
+        "transcript": [],
+        "usage": {},
+    }
+
     try:
-        llm_result = chat_with_metadata(
-            system_prompt=str(twin["system_prompt"]),
+        # Round 1: interviewer opening questions
+        r1_q = chat_with_metadata(
+            system_prompt=interviewer_base + "请向被访者提出 2-3 个开放性问题，了解第一反应和购买意愿。",
+            user_prompt="请提出你的开场问题。",
+            temperature=0.6,
+        )
+        # Round 1: twin answers
+        r1_a = chat_with_metadata(
+            system_prompt=twin_system,
             user_prompt=(
-                f"你现在参加一个消费者产品调研。研究员会向你展示一个新饮品概念。\n\n"
-                f"产品概念信息：\n{stimulus_desc}\n\n"
-                f"请分享你看到这个产品概念后的：\n"
-                f"1. 第一反应和感受\n"
-                f"2. 你觉得这个产品适合谁？为什么？\n"
-                f"3. 你自己会不会考虑购买？什么因素最影响你的决定？\n"
-                f"4. 这个产品有什么让你担心或不确定的地方？\n"
-                f"5. 如果让你给建议，你觉得这个产品可以怎么改进？"
+                f"你正在参加一个产品调研。以下是产品概念：\n{stimulus_desc}\n\n"
+                f"研究员的问题：\n{r1_q['content']}\n\n"
+                "请用口语化的方式回答这些问题。"
             ),
             temperature=0.8,
         )
+        # Round 2: interviewer probes deeper
+        r2_q = chat_with_metadata(
+            system_prompt=interviewer_base + f"被访者刚才的回答：\n{r1_a['content']}\n\n请追问 1-2 个更深入的问题。",
+            user_prompt="基于被访者的回答，请追问更深入的问题。",
+            temperature=0.6,
+        )
+        # Round 2: twin answers follow-up
+        r2_a = chat_with_metadata(
+            system_prompt=twin_system,
+            user_prompt=(
+                f"产品概念：\n{stimulus_desc}\n\n"
+                f"你之前说了：\n{r1_a['content']}\n\n"
+                f"研究员追问：\n{r2_q['content']}\n\n请继续回答。"
+            ),
+            temperature=0.8,
+        )
+        # Round 3: interviewer summary
+        summary = chat_with_metadata(
+            system_prompt=interviewer_base + "请用 3-5 句话总结本次访谈的关键发现和被访者态度。",
+            user_prompt=(
+                f"被访者第一轮回答：\n{r1_a['content']}\n\n"
+                f"被访者追问回答：\n{r2_a['content']}\n\n"
+                "请总结本次访谈。"
+            ),
+            temperature=0.5,
+        )
+
+        transcript = [
+            {"role": "interviewer", "content": r1_q["content"]},
+            {"role": "respondent", "content": r1_a["content"]},
+            {"role": "interviewer", "content": r2_q["content"]},
+            {"role": "respondent", "content": r2_a["content"]},
+            {"role": "summary", "content": summary["content"]},
+        ]
+        all_usage = _merge_usage(r1_q["usage"], r1_a["usage"], r2_q["usage"], r2_a["usage"], summary["usage"])
+
         return {
             "twin_id": twin["id"],
             "twin_name": twin["name"],
             "stimulus_id": stimulus["id"],
             "stimulus_name": stimulus["name"],
-            "response": llm_result["content"],
-            "usage": llm_result["usage"],
+            "response": summary["content"],
+            "transcript": transcript,
+            "usage": all_usage,
         }
     except Exception as exc:
         logger.warning("idi_interview_failed twin=%s stimulus=%s error=%s", twin["name"], stimulus["name"], exc)
-        return {
-            "twin_id": twin["id"],
-            "twin_name": twin["name"],
-            "stimulus_id": stimulus["id"],
-            "stimulus_name": stimulus["name"],
-            "response": f"（访谈未能完成：{type(exc).__name__}）",
-            "usage": {},
-        }
+        return {**fallback, "response": f"（访谈未能完成：{type(exc).__name__}）"}
 
 
 def _extract_qual_themes(interviews: list[dict[str, Any]], business_question: str) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -629,6 +667,68 @@ def _run_quant_scoring(interviews: list[dict[str, Any]], business_question: str)
         }, dict(llm_result["usage"])
 
 
+def _run_replica_scoring(
+    interviews: list[dict[str, Any]],
+    business_question: str,
+    *,
+    replicas: int = 3,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Run N independent scoring rounds and aggregate with statistics."""
+    all_rounds: list[dict[str, Any]] = []
+    all_usage: list[dict[str, Any]] = []
+
+    for round_no in range(replicas):
+        logger.info("replica_scoring round=%d/%d", round_no + 1, replicas)
+        result, usage = _run_quant_scoring(interviews, business_question)
+        all_rounds.append(result)
+        all_usage.append(usage)
+
+    stimulus_scores: dict[str, list[float]] = {}
+    stimulus_meta: dict[str, dict[str, Any]] = {}
+    for result in all_rounds:
+        for item in result.get("ranking", []):
+            name = str(item.get("stimulus_name", ""))
+            score = float(item.get("score", 0))
+            stimulus_scores.setdefault(name, []).append(score)
+            stimulus_meta[name] = item
+
+    ranking: list[dict[str, Any]] = []
+    for name, scores in stimulus_scores.items():
+        n = len(scores)
+        mean = sum(scores) / n if n > 0 else 0
+        variance = sum((s - mean) ** 2 for s in scores) / max(n - 1, 1)
+        std = variance ** 0.5
+        ci_half = 1.96 * std / (n ** 0.5) if n > 0 else 0
+
+        if std <= 5:
+            confidence = "high"
+        elif std <= 12:
+            confidence = "medium"
+        else:
+            confidence = "low"
+
+        ranking.append({
+            "stimulus_name": name,
+            "score": round(mean, 1),
+            "std": round(std, 1),
+            "confidence_interval": f"{round(mean - ci_half, 1)} - {round(mean + ci_half, 1)}",
+            "confidence": confidence,
+            "confidence_label": f"{round(mean):.0f} ± {round(std, 1)} / {'高' if confidence == 'high' else '中' if confidence == 'medium' else '低'}",
+            "replicas": n,
+            "all_scores": scores,
+            "rationale": stimulus_meta.get(name, {}).get("rationale", ""),
+        })
+
+    ranking.sort(key=lambda x: float(x["score"]), reverse=True)
+
+    return {
+        "ranking": ranking,
+        "scoring_methodology": f"每个概念独立评分 {replicas} 次，取均值 ± 标准差",
+        "replicas_per_stimulus": replicas,
+        "total_scoring_rounds": len(all_rounds),
+    }, _merge_usage(*all_usage)
+
+
 def _generate_recommendation(
     qual_themes: dict[str, Any],
     quant_ranking: dict[str, Any],
@@ -704,7 +804,9 @@ def _complete_study_run(payload: dict[str, Optional[str]]) -> None:
             if row and isinstance(row["artifact_manifest_json"], dict):
                 qual_themes = row["artifact_manifest_json"].get("themes", {})
 
-    quant_result, quant_usage = _run_quant_scoring(interviews, context["business_question"])
+    quant_config = context.get("quant_config_json")
+    replicas = int((quant_config or {}).get("replicas", 3)) if isinstance(quant_config, dict) else 3
+    quant_result, quant_usage = _run_replica_scoring(interviews, context["business_question"], replicas=replicas)
     quant_result["usage"] = quant_usage
     logger.info("quant_scoring_done run_id=%s", run_id)
 

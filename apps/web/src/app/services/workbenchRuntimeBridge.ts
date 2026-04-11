@@ -311,13 +311,21 @@ function buildConversationEventsFromArtifacts(
     const themes = manifest.themes ?? {};
     const interviews: Array<Record<string, any>> = Array.isArray(manifest.interviews) ? manifest.interviews : [];
     const twinNames = [...new Set(interviews.map((i) => String(i.twin_name ?? '未知')))];
-    const excerpts = interviews.slice(0, 4).map((interview) => ({
-      speakerLabel: String(interview.twin_name ?? '受访者'),
-      lines: String(interview.response ?? '')
-        .split('\n')
-        .filter(Boolean)
-        .slice(0, 3),
-    }));
+    const excerpts = interviews.slice(0, 4).map((interview) => {
+      const transcript = Array.isArray(interview.transcript) ? interview.transcript : [];
+      if (transcript.length > 0) {
+        return {
+          speakerLabel: String(interview.twin_name ?? '受访者'),
+          lines: (transcript as Array<Record<string, unknown>>)
+            .filter((t) => t.role === 'respondent')
+            .flatMap((t) => String(t.content ?? '').split('\n').filter(Boolean).slice(0, 2)),
+        };
+      }
+      return {
+        speakerLabel: String(interview.twin_name ?? '受访者'),
+        lines: String(interview.response ?? '').split('\n').filter(Boolean).slice(0, 3),
+      };
+    });
     events.push({
       id: 'artifact-event-qual-session',
       type: 'qual_session_card',
@@ -682,9 +690,9 @@ function buildStageCopy(
       }
       if (runStatus === 'succeeded' || projection.study.status === 'completed') {
         return {
-          eyebrow: '定量排序',
-          headline: '排序已完成',
-          detail: '定量排序已完成，排名结果和置信度评分已生成。',
+          eyebrow: 'AI 综合评估',
+          headline: '多轮评分已完成',
+          detail: '多轮独立评分已完成，排名结果和置信度区间已生成。',
         };
       }
       return {

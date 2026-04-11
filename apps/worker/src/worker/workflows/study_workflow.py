@@ -26,7 +26,7 @@ if workflow is not None:
 
         async def _run_impl(self, payload: dict[str, str]) -> str:
             workflow.logger.info("study_workflow_started %s", payload)
-            timeout = timedelta(seconds=600)
+            timeout = timedelta(seconds=900)
             retry = RetryPolicy(maximum_attempts=3, backoff_coefficient=2.0)
             await workflow.execute_activity(mark_run_running, payload, start_to_close_timeout=timeout, retry_policy=retry)
             await workflow.execute_activity(advance_to_midrun_review, payload, start_to_close_timeout=timeout, retry_policy=retry)
