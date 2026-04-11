@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronDown, Info } from 'lucide-react';
 
 import { buildStudyRoute } from '@/app/services/studyRuntimeViews';
-import { sendChatMessage, type WorkbenchProjection } from '@/app/services/studyRuntime';
-import { useWorkbenchUiStore } from '@/app/store/ui-store';
-import type { ConversationEvent } from '@/types/demo';
 import {
-  buildConversationEventsForProjection,
+  fetchAgentMessages,
+  postAgentReply,
+  type AgentMessage,
+  type WorkbenchProjection,
+} from '@/app/services/studyRuntime';
+import { useWorkbenchUiStore } from '@/app/store/ui-store';
+import {
   buildExecutiveSummaryForProjection,
   buildPromptSuggestions,
   buildSetupBarData,
@@ -20,20 +23,14 @@ import { ReplayModal } from '@/features/evidence/components/replay-modal';
 import { TrustDrawer } from '@/features/evidence/components/trust-drawer';
 import { TwinProvenanceDrawer } from '@/features/evidence/components/twin-provenance-drawer';
 import { ResultPanel } from '@/features/results/components/result-panel';
-import { ConversationThread } from '../components/conversation-thread';
+import { AgentConversation } from '../components/agent-conversation';
 import { PromptComposer } from '../components/prompt-composer';
-
-const PAUSE_EVENT_TYPES = new Set(['plan_approval_card', 'midrun_review_card']);
-const PLAYBACK_STEP_DELAY = 1800;
-const PLAYBACK_INITIAL_DELAY = 1200;
 
 export function WorkbenchPage({
   projection,
-  playback = false,
   onCardAction,
 }: {
   projection: WorkbenchProjection;
-  playback?: boolean;
   onCardAction?: (action: string) => void;
 }) {
   const navigate = useNavigate();
@@ -46,44 +43,49 @@ export function WorkbenchPage({
   const closeReplay = useWorkbenchUiStore((state) => state.closeReplay);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [resultDrawerOpen, setResultDrawerOpen] = useState(false);
-  const messageIdRef = useRef(1000);
 
+  const studyId = projection.study.id;
   const scenario = useMemo(() => getPitchScenarioBundle(projection), [projection]);
-  const baseEvents = useMemo(
-    () => buildConversationEventsForProjection(projection),
-    [projection],
-  );
-  const promptSuggestions = useMemo(
-    () => buildPromptSuggestions(projection),
-    [projection],
-  );
-  const setupBarData = useMemo(
-    () => buildSetupBarData(projection),
-    [projection],
-  );
-  const executiveSummary = useMemo(
-    () => buildExecutiveSummaryForProjection(projection),
-    [projection],
-  );
-  const sessionBoard = useMemo(
-    () => buildStudySessionBoard(projection),
-    [projection],
-  );
+  const promptSuggestions = useMemo(() => buildPromptSuggestions(projection), [projection]);
+  const setupBarData = useMemo(() => buildSetupBarData(projection), [projection]);
+  const executiveSummary = useMemo(() => buildExecutiveSummaryForProjection(projection), [projection]);
+  const sessionBoard = useMemo(() => buildStudySessionBoard(projection), [projection]);
 
+  // --- Agent messages ---
+  const [messages, setMessages] = useState<AgentMessage[]>([]);
+  const [sending, setSending] = useState(false);
+  const lastIdRef = useRef<string | undefined>(undefined);
+
+  // Initial load + polling
+  useEffect(() => {
+    let active = true;
+
+    async function poll() {
+      try {
+        const { messages: newMsgs } = await fetchAgentMessages(studyId, lastIdRef.current);
+        if (!active) return;
+        if (newMsgs.length > 0) {
+          setMessages((prev) => [...prev, ...newMsgs]);
+          lastIdRef.current = newMsgs[newMsgs.length - 1].id;
+        }
+      } catch {
+        // ignore polling errors
+      }
+    }
+
+    void poll();
+    const interval = setInterval(poll, 2500);
+    return () => { active = false; clearInterval(interval); };
+  }, [studyId]);
+
+  // Handle focus search params (trust/inputs/twins/replay drawers)
   useEffect(() => {
     const focus = searchParams.get('focus');
-    if (!focus) {
-      return;
-    }
-    if (focus === 'trust') {
-      openDrawer('trust');
-    } else if (focus === 'inputs') {
-      openDrawer('inputs');
-    } else if (focus === 'twins') {
-      openDrawer('twins');
-    } else if (focus === 'replay') {
-      openReplay();
-    }
+    if (!focus) return;
+    if (focus === 'trust') openDrawer('trust');
+    else if (focus === 'inputs') openDrawer('inputs');
+    else if (focus === 'twins') openDrawer('twins');
+    else if (focus === 'replay') openReplay();
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       next.delete('focus');
@@ -91,140 +93,67 @@ export function WorkbenchPage({
     }, { replace: true });
   }, [openDrawer, openReplay, searchParams, setSearchParams]);
 
-  // --- Dynamic messages appended by user interaction ---
-  const [extraEvents, setExtraEvents] = useState<ConversationEvent[]>([]);
-  const allEvents = useMemo(
-    () => [...baseEvents, ...extraEvents],
-    [baseEvents, extraEvents],
-  );
+  // --- Handlers ---
 
-  // --- Playback state ---
-  const [visibleCount, setVisibleCount] = useState(playback ? 0 : baseEvents.length);
-  const [isPaused, setIsPaused] = useState(false);
-  const isPlaybackActive = playback && visibleCount < baseEvents.length && !isPaused;
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const advancePlayback = useCallback(() => {
-    setVisibleCount((prev) => {
-      const next = prev + 1;
-      const justShown = baseEvents[next - 1];
-      if (justShown && PAUSE_EVENT_TYPES.has(justShown.type)) {
-        setIsPaused(true);
+  async function handleAction(actionId: string, action: string) {
+    // Handle frontend-only actions
+    if (action === '查看计划详情') { setDetailsOpen(true); return; }
+    if (action === '查看详细对比') { navigate(buildStudyRoute('/compare', studyId)); return; }
+    if (action === '查看研究回放') { openReplay(); return; }
+    if (action === '下载报告') {
+      const hasReport = projection.artifacts?.some((a) => a.artifact_type === 'report' && a.status === 'ready');
+      if (hasReport) {
+        const base = (import.meta.env.VITE_STUDY_RUNTIME_API_URL || 'http://127.0.0.1:8000') as string;
+        window.open(`${base}/studies/${encodeURIComponent(studyId)}/report`, '_blank');
       }
-      return next;
-    });
-  }, [baseEvents]);
-
-  const skipPlayback = useCallback(() => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-    }
-    setIsPaused(false);
-    setVisibleCount(baseEvents.length);
-  }, [baseEvents.length]);
-
-  useEffect(() => {
-    if (!playback || isPaused || visibleCount >= baseEvents.length) return;
-    const delay = visibleCount === 0 ? PLAYBACK_INITIAL_DELAY : PLAYBACK_STEP_DELAY;
-    timerRef.current = setTimeout(advancePlayback, delay);
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, [playback, isPaused, visibleCount, baseEvents.length, advancePlayback]);
-
-  // When not in playback or playback finishes, show all base events + extras
-  useEffect(() => {
-    if (!playback) {
-      setVisibleCount(baseEvents.length + extraEvents.length);
-    }
-  }, [playback, baseEvents.length, extraEvents.length]);
-
-  // When extra events are added (user sends message), bump visible count
-  useEffect(() => {
-    if (!playback || visibleCount >= baseEvents.length) {
-      setVisibleCount(baseEvents.length + extraEvents.length);
-    }
-  }, [extraEvents.length, baseEvents.length, playback, visibleCount]);
-
-  function handleCardAction(action: string) {
-    if (isPaused) {
-      setIsPaused(false);
-      setTimeout(advancePlayback, 600);
-    }
-    if (action === '查看计划详情') {
-      setDetailsOpen(true);
       return;
     }
+
+    // Delegate to onCardAction for legacy actions
     onCardAction?.(action);
+
+    // Send to agent
+    setSending(true);
+    try {
+      await postAgentReply(studyId, { action_id: actionId, action });
+    } finally {
+      setSending(false);
+    }
   }
 
-  const chatHistoryRef = useRef<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
-
-  function handleUserSend(message: string) {
-    const now = new Date();
-    const ts = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-    const currentMsgId = ++messageIdRef.current;
-
-    const userEvent: ConversationEvent = {
-      id: `user-msg-${currentMsgId}`,
-      type: 'user_message',
-      body: message,
-      timestamp: ts,
+  async function handleUserSend(message: string) {
+    // Optimistically add user message
+    const tempId = `temp-${Date.now()}`;
+    const tempMsg: AgentMessage = {
+      id: tempId,
+      study_id: studyId,
+      role: 'user',
+      content: message,
+      message_type: 'text',
+      metadata_json: {},
+      created_at: new Date().toISOString(),
     };
+    setMessages((prev) => [...prev, tempMsg]);
 
-    const loadingEventId = `agent-loading-${currentMsgId}`;
-    const loadingEvent: ConversationEvent = {
-      id: loadingEventId,
-      type: 'agent_message',
-      body: '正在思考...',
-      timestamp: ts,
-    };
-
-    setExtraEvents((prev) => [...prev, userEvent, loadingEvent]);
-
-    const studyId = projection.study.id;
-    sendChatMessage(studyId, message, chatHistoryRef.current)
-      .then((res) => {
-        chatHistoryRef.current.push({ role: 'user', content: message });
-        chatHistoryRef.current.push({ role: 'assistant', content: res.reply });
-        const agentEvent: ConversationEvent = {
-          id: `agent-reply-${currentMsgId}`,
-          type: 'agent_message',
-          body: res.reply,
-          timestamp: ts,
-        };
-        setExtraEvents((prev) => prev.filter((e) => e.id !== loadingEventId).concat(agentEvent));
-      })
-      .catch(() => {
-        const agentEvent: ConversationEvent = {
-          id: `agent-reply-${currentMsgId}`,
-          type: 'agent_message',
-          body: '抱歉，AI 服务暂时不可用。请确认后端服务已启动后重试。',
-          timestamp: ts,
-        };
-        setExtraEvents((prev) => prev.filter((e) => e.id !== loadingEventId).concat(agentEvent));
-      });
+    setSending(true);
+    try {
+      await postAgentReply(studyId, { action: message });
+    } finally {
+      setSending(false);
+    }
   }
 
   const rawStatus = projection.current_run?.status ?? projection.study.status;
   const STATUS_LABELS: Record<string, string> = {
-    draft: '草稿',
-    planning: '计划中',
-    pending_approval: '待审批',
-    approved: '已审批',
-    queued: '排队中',
-    running: '执行中',
-    awaiting_midrun_approval: '待中途审核',
-    succeeded: '已完成',
-    failed: '执行异常',
-    completed: '已完成',
+    draft: '草稿', planning: '计划中', pending_approval: '待审批',
+    approved: '已审批', queued: '排队中', running: '执行中',
+    awaiting_midrun_approval: '待中途审核', succeeded: '已完成',
+    failed: '执行异常', completed: '已完成',
   };
   const currentStatus = (rawStatus ? STATUS_LABELS[rawStatus] : undefined) ?? rawStatus ?? '未知';
 
   const progressSegments = sessionBoard.map((card) => ({
-    id: card.id,
-    label: card.label,
-    status: card.status,
+    id: card.id, label: card.label, status: card.status,
   }));
 
   return (
@@ -234,7 +163,7 @@ export function WorkbenchPage({
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <h2 className="truncate text-lg font-semibold tracking-[-0.02em] text-text">
-              {scenario.meta.studyName}
+              {projection.study.business_question || scenario.meta.studyName}
             </h2>
             <span className="shrink-0 rounded-btn border border-accent/30 bg-accentSoft px-2 py-0.5 font-mono text-[0.6rem] font-semibold text-accent">
               {currentStatus}
@@ -244,28 +173,18 @@ export function WorkbenchPage({
             <div className="hidden items-center gap-1 md:flex">
               {progressSegments.map((seg) => (
                 <div key={seg.id} className="flex items-center gap-1.5">
-                  <div
-                    className={`h-2 w-2 rounded-full ${
-                      seg.status === 'done'
-                        ? 'bg-accent shadow-[0_0_6px_rgba(99,102,241,0.5)]'
-                        : seg.status === 'current'
-                          ? 'bg-action shadow-[0_0_6px_rgba(255,107,43,0.5)]'
-                          : 'bg-surfaceElevated'
-                    }`}
-                  />
+                  <div className={`h-2 w-2 rounded-full ${
+                    seg.status === 'done' ? 'bg-accent shadow-[0_0_6px_rgba(99,102,241,0.5)]'
+                    : seg.status === 'current' ? 'bg-action shadow-[0_0_6px_rgba(255,107,43,0.5)]'
+                    : 'bg-surfaceElevated'
+                  }`} />
                   <span className={`text-[0.6rem] font-medium ${
                     seg.status === 'done' ? 'text-accent' : seg.status === 'current' ? 'text-text' : 'text-tertiary'
-                  }`}>
-                    {seg.label}
-                  </span>
+                  }`}>{seg.label}</span>
                 </div>
               ))}
             </div>
-            <button
-              type="button"
-              onClick={() => setDetailsOpen((v) => !v)}
-              className="btn-secondary-sm"
-            >
+            <button type="button" onClick={() => setDetailsOpen((v) => !v)} className="btn-secondary-sm">
               <Info className="h-3.5 w-3.5" />
               研究详情
               <ChevronDown className={`h-3 w-3 transition ${detailsOpen ? 'rotate-180' : ''}`} />
@@ -287,29 +206,18 @@ export function WorkbenchPage({
 
       {/* Three-panel body */}
       <div className="mt-3 flex flex-1 min-h-0 gap-5 overflow-hidden">
-        {/* Center: Conversation + Composer */}
+        {/* Center: Agent Conversation + Composer */}
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex-1 min-h-0 overflow-y-auto pr-1">
-            <ConversationThread
-              events={allEvents}
-              visibleCount={visibleCount}
-              isStreaming={isPlaybackActive}
-              onCardAction={handleCardAction}
-              playbackProgress={{
-                current: Math.min(visibleCount, baseEvents.length),
-                total: baseEvents.length,
-              }}
-              onSkipPlayback={isPlaybackActive ? skipPlayback : undefined}
+            <AgentConversation
+              messages={messages}
+              sending={sending}
+              onAction={handleAction}
             />
           </div>
           <div className="flex-none pt-3">
-            {/* Small screen: show results button */}
             <div className="mb-2 lg:hidden">
-              <button
-                type="button"
-                onClick={() => setResultDrawerOpen(true)}
-                className="btn-accent w-full text-center"
-              >
+              <button type="button" onClick={() => setResultDrawerOpen(true)} className="btn-accent w-full text-center">
                 查看研究结果
               </button>
             </div>
@@ -322,12 +230,12 @@ export function WorkbenchPage({
           <ResultPanel
             projection={projection}
             scenario={scenario}
-            onOpenCompare={() => navigate(buildStudyRoute('/compare', projection.study.id))}
+            onOpenCompare={() => navigate(buildStudyRoute('/compare', studyId))}
             onOpenReplay={() => openReplay()}
             onOpenTrust={() => openDrawer('trust')}
-            onOpenTwins={() => navigate(buildStudyRoute('/twins', projection.study.id))}
+            onOpenTwins={() => navigate(buildStudyRoute('/twins', studyId))}
             onOpenInputs={() => openDrawer('inputs')}
-            onCardAction={handleCardAction}
+            onCardAction={(action) => onCardAction?.(action)}
           />
         </div>
       </div>
@@ -343,8 +251,6 @@ export function WorkbenchPage({
         onClose={closeDrawer}
       />
       <ReplayModal open={replayOpen} replay={scenario.replay} onClose={closeReplay} />
-
-      {/* Small-screen result drawer */}
       <DrawerShell open={resultDrawerOpen} onClose={() => setResultDrawerOpen(false)} ariaLabel="研究结果">
         <div className="flex items-center justify-between gap-3 mb-4">
           <div className="eyebrow text-muted">研究结果</div>
@@ -353,12 +259,12 @@ export function WorkbenchPage({
         <ResultPanel
           projection={projection}
           scenario={scenario}
-          onOpenCompare={() => { setResultDrawerOpen(false); navigate(buildStudyRoute('/compare', projection.study.id)); }}
+          onOpenCompare={() => { setResultDrawerOpen(false); navigate(buildStudyRoute('/compare', studyId)); }}
           onOpenReplay={() => { setResultDrawerOpen(false); openReplay(); }}
           onOpenTrust={() => { setResultDrawerOpen(false); openDrawer('trust'); }}
-          onOpenTwins={() => { setResultDrawerOpen(false); navigate(buildStudyRoute('/twins', projection.study.id)); }}
+          onOpenTwins={() => { setResultDrawerOpen(false); navigate(buildStudyRoute('/twins', studyId)); }}
           onOpenInputs={() => { setResultDrawerOpen(false); openDrawer('inputs'); }}
-          onCardAction={handleCardAction}
+          onCardAction={(action) => onCardAction?.(action)}
         />
       </DrawerShell>
     </div>

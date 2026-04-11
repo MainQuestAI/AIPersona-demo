@@ -514,7 +514,6 @@ export function WorkbenchPlaceholder() {
       <div className="flex-1 min-h-0">
         <WorkbenchPage
           projection={projection}
-          playback={searchParams.get('playback') === '1'}
           onCardAction={(action: string) => { void handleCardAction(action); }}
         />
       </div>

@@ -497,3 +497,53 @@ export async function sendChatMessage(
     },
   );
 }
+
+// ---------------------------------------------------------------------------
+//  Agent conversation API
+// ---------------------------------------------------------------------------
+
+export type AgentMessage = {
+  id: string;
+  study_id: string;
+  role: 'agent' | 'user' | 'system';
+  content: string;
+  message_type: 'text' | 'action_request' | 'action_response' | 'progress' | 'card' | 'error';
+  metadata_json: Record<string, unknown>;
+  created_at: string;
+};
+
+export async function fetchAgentMessages(
+  studyId: string,
+  afterId?: string,
+): Promise<{ messages: AgentMessage[] }> {
+  const params = afterId ? `?after=${encodeURIComponent(afterId)}` : '';
+  return requestJson<{ messages: AgentMessage[] }>(
+    `/studies/${encodeURIComponent(studyId)}/agent/messages${params}`,
+  );
+}
+
+export async function postAgentReply(
+  studyId: string,
+  payload: { action_id?: string; action: string; comment?: string },
+): Promise<{ status: string; reply?: string }> {
+  return requestJson<{ status: string; reply?: string }>(
+    `/studies/${encodeURIComponent(studyId)}/agent/reply`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        action_id: payload.action_id ?? '',
+        action: payload.action,
+        comment: payload.comment,
+      }),
+    },
+  );
+}
+
+export async function startAgent(
+  studyId: string,
+): Promise<{ status: string; run_id: string }> {
+  return requestJson<{ status: string; run_id: string }>(
+    `/studies/${encodeURIComponent(studyId)}/agent/start`,
+    { method: 'POST' },
+  );
+}
