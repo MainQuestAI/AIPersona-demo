@@ -84,6 +84,16 @@ function EmptyWorkbenchState({
     });
   }
 
+  const defaultQuestion = '哪一个母婴饮品概念值得进入真实消费者验证？';
+  const effectiveQuestion = question.trim() || defaultQuestion;
+  const seedLoading = !seedPack;
+
+  // C-01: execution time estimate
+  const idiCalls = selectedTwins.size * selectedStimuli.size * 5; // 5 LLM calls per multi-turn IDI
+  const replicaCalls = selectedStimuli.size * 3; // 3 replicas per stimulus
+  const totalCalls = idiCalls + 1 + replicaCalls + 1; // + theme extraction + recommendation
+  const estimatedMinutes = Math.ceil(totalCalls * 12 / 60); // ~12s per call
+
   return (
     <div className="flex h-full items-center justify-center">
       <motion.div
@@ -110,10 +120,16 @@ function EmptyWorkbenchState({
           <textarea
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            placeholder="例如：针对孕期女性，哪款新品饮品概念最能建立营养可信赖的品牌认知？"
+            placeholder={`例如：${defaultQuestion}`}
             rows={3}
             className="w-full resize-none rounded-btn border border-line bg-[rgba(255,255,255,0.02)] px-4 py-3 text-sm text-text placeholder:text-tertiary focus:border-accent/40 focus:outline-none"
           />
+          {/* C-03: show default question hint when input is empty */}
+          {!question.trim() && (
+            <div className="mt-1.5 text-[0.65rem] text-tertiary">
+              未输入时将使用默认问题：{defaultQuestion}
+            </div>
+          )}
           <div className="mt-4 flex items-center justify-between">
             <div className="flex flex-wrap gap-2">
               {RESEARCH_TEMPLATES.map((t) => (
@@ -129,17 +145,19 @@ function EmptyWorkbenchState({
               ))}
             </div>
             <div className="flex items-center gap-2">
+              {/* I-01: disable config button while seed loading */}
               <button
                 type="button"
                 onClick={() => setConfigOpen((v) => !v)}
+                disabled={seedLoading}
                 className="btn-secondary !px-3 !py-1.5 !text-xs"
               >
-                {configOpen ? '收起配置' : '配置研究'}
+                {seedLoading ? '加载中...' : configOpen ? '收起配置' : '配置研究'}
               </button>
               <button
                 type="button"
                 onClick={() => onCreateDemoStudy(
-                  question,
+                  effectiveQuestion,
                   selectedTwins.size > 0 ? [...selectedTwins] : undefined,
                   selectedStimuli.size > 0 ? [...selectedStimuli] : undefined,
                 )}
@@ -187,6 +205,12 @@ function EmptyWorkbenchState({
                     </label>
                   ))}
                 </div>
+              </div>
+              {/* C-01: execution time estimate */}
+              <div className="rounded-btn border border-line bg-surfaceElevated px-3 py-2.5 text-xs text-muted">
+                预计 <span className="font-semibold text-text">{totalCalls}</span> 次 AI 调用
+                （{selectedTwins.size} 孪生 × {selectedStimuli.size} 刺激物 × 5 轮 IDI + {replicaCalls} 轮评分），
+                约需 <span className="font-semibold text-text">{estimatedMinutes}</span> 分钟
               </div>
             </div>
           ) : null}
@@ -455,9 +479,14 @@ export function WorkbenchPlaceholder() {
     } else if (action === '暂停编辑') {
       showToast('研究已暂停，您可以修改刺激物配置后继续');
     } else if (action === '下载报告') {
-      window.open(getReportDownloadUrl(activeStudyId), '_blank');
+      const hasReport = projection?.artifacts?.some((a) => a.artifact_type === 'report' && a.status === 'ready');
+      if (hasReport) {
+        window.open(getReportDownloadUrl(activeStudyId), '_blank');
+      } else {
+        showToast('报告正在生成中，请稍后再试');
+      }
     } else if (action === '归档到资产库') {
-      showToast('已归档到企业研究资产库');
+      showToast('资产库归档功能将在下一版本上线');
     } else if (action === '进入消费者验证') {
       navigate(buildStudyRoute('/compare', activeStudyId));
     } else if (action === '探索"清"/"泉"命名边界') {
@@ -469,7 +498,7 @@ export function WorkbenchPlaceholder() {
     } else if (action === '查看变更') {
       showToast('变更详情正在加载');
     } else if (action === '启动重跑') {
-      showToast('重跑任务已创建，预计 3 分钟完成');
+      showToast('重跑功能将在下一版本上线');
     } else if (action === '保留当前结果') {
       showToast('已保留当前研究结果');
     }

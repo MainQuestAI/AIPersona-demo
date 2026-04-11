@@ -15,9 +15,9 @@ export function QualSessionCard({ event }: { event: QualSessionEvent }) {
         {event.helperText}
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
-        {event.emergingThemes.map((theme) => (
+        {event.emergingThemes.map((theme, i) => (
           <span
-            key={theme}
+            key={i}
             className="rounded-btn border border-warning/30 bg-warningSoft px-3 py-1 text-xs font-medium text-warning"
           >
             {theme}
@@ -25,17 +25,21 @@ export function QualSessionCard({ event }: { event: QualSessionEvent }) {
         ))}
       </div>
       <div className="mt-4 grid gap-3">
-        {event.excerpts.map((excerpt) => (
+        {event.excerpts.map((excerpt, excerptIdx) => (
           <div
-            key={excerpt.speakerLabel}
+            key={excerptIdx}
             className="inner-card p-4"
           >
             <div className="eyebrow text-muted">
               {excerpt.speakerLabel}
             </div>
-            <div className="mt-2 space-y-2 text-sm leading-6 text-text/90">
-              {excerpt.lines.map((line) => (
-                <p key={line}>{line}</p>
+            <div className="mt-2 space-y-2 text-sm leading-6">
+              {excerpt.lines.map((line, lineIdx) => (
+                <p key={lineIdx} className="text-text/90">
+                  <span className="text-tertiary">&ldquo;</span>
+                  {line}
+                  <span className="text-tertiary">&rdquo;</span>
+                </p>
               ))}
             </div>
           </div>

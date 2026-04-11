@@ -170,7 +170,15 @@ export function WorkbenchPage({
       timestamp: ts,
     };
 
-    setExtraEvents((prev) => [...prev, userEvent]);
+    const loadingEventId = `agent-loading-${currentMsgId}`;
+    const loadingEvent: ConversationEvent = {
+      id: loadingEventId,
+      type: 'agent_message',
+      body: '正在思考...',
+      timestamp: ts,
+    };
+
+    setExtraEvents((prev) => [...prev, userEvent, loadingEvent]);
 
     const studyId = projection.study.id;
     sendChatMessage(studyId, message, chatHistoryRef.current)
@@ -183,7 +191,7 @@ export function WorkbenchPage({
           body: res.reply,
           timestamp: ts,
         };
-        setExtraEvents((prev) => [...prev, agentEvent]);
+        setExtraEvents((prev) => prev.filter((e) => e.id !== loadingEventId).concat(agentEvent));
       })
       .catch(() => {
         const agentEvent: ConversationEvent = {
@@ -192,7 +200,7 @@ export function WorkbenchPage({
           body: '抱歉，AI 服务暂时不可用。请确认后端服务已启动后重试。',
           timestamp: ts,
         };
-        setExtraEvents((prev) => [...prev, agentEvent]);
+        setExtraEvents((prev) => prev.filter((e) => e.id !== loadingEventId).concat(agentEvent));
       });
   }
 

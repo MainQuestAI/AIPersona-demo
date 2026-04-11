@@ -1,13 +1,21 @@
 import type { RankingItem } from '@/types/demo';
 
+const LEVEL_COLORS: Record<string, string> = {
+  high: 'bg-accent',
+  medium: 'bg-warning',
+  low: 'bg-danger',
+};
+
 export function QuantRanking({
   ranking,
 }: {
   ranking: RankingItem[];
 }) {
+  const maxScore = Math.max(...ranking.map((item) => item.score), 1);
+
   return (
     <div className="rounded-panel border border-line bg-panel p-5">
-      <div className="eyebrow text-muted">量化排名</div>
+      <div className="eyebrow text-muted">AI 综合评估</div>
       <div className="mt-4 space-y-3">
         {ranking.map((item, index) => (
           <div key={item.stimulusId} className="inner-card p-4">
@@ -20,6 +28,13 @@ export function QuantRanking({
                 <div className="text-2xl font-semibold text-text">{item.score}</div>
                 <div className="mt-1 eyebrow text-muted">{item.confidenceLabel}</div>
               </div>
+            </div>
+            {/* ScoreBar */}
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-surfaceElevated">
+              <div
+                className={`h-full rounded-full transition-[width] duration-500 ${LEVEL_COLORS[item.confidenceLevel] ?? 'bg-accent'}`}
+                style={{ width: `${Math.max((item.score / maxScore) * 100, 4)}%` }}
+              />
             </div>
           </div>
         ))}
