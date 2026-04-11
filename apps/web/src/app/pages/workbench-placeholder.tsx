@@ -5,12 +5,15 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import {
   approvePlan,
+  bootstrapSeedAssets,
   createDemoStudy,
   fetchWorkbenchProjection,
+  getReportDownloadUrl,
   listStudies,
   resumeRun,
   startRun,
   submitPlanForApproval,
+  type SeedAssetPack,
   type StudyListItem,
   type WorkbenchProjection,
 } from '../services/studyRuntime';
@@ -47,11 +50,39 @@ function EmptyWorkbenchState({
   historyStudies,
 }: {
   busy: boolean;
-  onCreateDemoStudy: (question: string) => void;
+  onCreateDemoStudy: (question: string, twinIds?: string[], stimulusIds?: string[]) => void;
   latestStudy: LatestStudySession | null;
   historyStudies: StudyListItem[];
 }) {
   const [question, setQuestion] = useState('');
+  const [configOpen, setConfigOpen] = useState(false);
+  const [seedPack, setSeedPack] = useState<SeedAssetPack | null>(null);
+  const [selectedTwins, setSelectedTwins] = useState<Set<string>>(new Set());
+  const [selectedStimuli, setSelectedStimuli] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    bootstrapSeedAssets().then((pack) => {
+      setSeedPack(pack);
+      setSelectedTwins(new Set(pack.twin_versions.map((t) => t.id)));
+      setSelectedStimuli(new Set(pack.stimuli.map((s) => s.id)));
+    }).catch(() => {/* ignore */});
+  }, []);
+
+  function toggleTwin(id: string) {
+    setSelectedTwins((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleStimulus(id: string) {
+    setSelectedStimuli((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
 
   return (
     <div className="flex h-full items-center justify-center">
@@ -97,15 +128,68 @@ function EmptyWorkbenchState({
                 </button>
               ))}
             </div>
-            <button
-              type="button"
-              onClick={() => onCreateDemoStudy(question)}
-              disabled={busy}
-              className="btn-primary"
-            >
-              {busy ? '正在创建...' : '开始研究'}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setConfigOpen((v) => !v)}
+                className="btn-secondary !px-3 !py-1.5 !text-xs"
+              >
+                {configOpen ? '收起配置' : '配置研究'}
+              </button>
+              <button
+                type="button"
+                onClick={() => onCreateDemoStudy(
+                  question,
+                  selectedTwins.size > 0 ? [...selectedTwins] : undefined,
+                  selectedStimuli.size > 0 ? [...selectedStimuli] : undefined,
+                )}
+                disabled={busy || selectedTwins.size === 0 || selectedStimuli.size === 0}
+                className="btn-primary"
+              >
+                {busy ? '正在创建...' : '开始研究'}
+              </button>
+            </div>
           </div>
+
+          {/* Configuration panel */}
+          {configOpen && seedPack ? (
+            <div className="mt-4 space-y-4 border-t border-line pt-4">
+              <div>
+                <div className="text-xs font-semibold text-muted">目标人群孪生 ({selectedTwins.size}/{seedPack.twin_versions.length})</div>
+                <div className="mt-2 space-y-1.5">
+                  {seedPack.twin_versions.map((twin) => (
+                    <label key={twin.id} className="flex items-center gap-2.5 cursor-pointer rounded-btn px-3 py-2 hover:bg-surfaceElevated">
+                      <input
+                        type="checkbox"
+                        checked={selectedTwins.has(twin.id)}
+                        onChange={() => toggleTwin(twin.id)}
+                        className="h-4 w-4 rounded border-line accent-accent"
+                      />
+                      <span className="text-sm text-text">{twin.name}</span>
+                      <span className="text-xs text-tertiary">v{twin.version_no}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-muted">刺激物概念 ({selectedStimuli.size}/{seedPack.stimuli.length})</div>
+                <div className="mt-2 space-y-1.5">
+                  {seedPack.stimuli.map((stimulus) => (
+                    <label key={stimulus.id} className="flex items-center gap-2.5 cursor-pointer rounded-btn px-3 py-2 hover:bg-surfaceElevated">
+                      <input
+                        type="checkbox"
+                        checked={selectedStimuli.has(stimulus.id)}
+                        onChange={() => toggleStimulus(stimulus.id)}
+                        className="h-4 w-4 rounded border-line accent-accent"
+                      />
+                      <span className="text-sm text-text">{stimulus.name}</span>
+                      <span className="rounded-btn bg-surfaceElevated px-2 py-0.5 text-[0.6rem] text-tertiary">{stimulus.stimulus_type}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
 
         {/* Recent study shortcut */}
@@ -246,10 +330,13 @@ export function WorkbenchPlaceholder() {
     setState({ status: 'ready', projection });
   }
 
-  async function handleCreateDemoStudy(question?: string): Promise<void> {
+  async function handleCreateDemoStudy(question?: string, twinIds?: string[], stimulusIds?: string[]): Promise<void> {
     setActionState({ status: 'running', label: '正在生成研究计划...' });
     try {
-      const bundle = await createDemoStudy('boss', question || undefined);
+      const bundle = await createDemoStudy('boss', question || undefined, {
+        twinVersionIds: twinIds,
+        stimulusIds: stimulusIds,
+      });
       rememberLatestStudySession({
         id: bundle.study.id,
         businessQuestion: bundle.study.business_question,
@@ -288,8 +375,8 @@ export function WorkbenchPlaceholder() {
         busy={actionState.status === 'running'}
         latestStudy={latestStudy}
         historyStudies={historyStudies}
-        onCreateDemoStudy={(question: string) => {
-          void handleCreateDemoStudy(question);
+        onCreateDemoStudy={(question: string, twinIds?: string[], stimulusIds?: string[]) => {
+          void handleCreateDemoStudy(question, twinIds, stimulusIds);
         }}
       />
     );
@@ -368,7 +455,7 @@ export function WorkbenchPlaceholder() {
     } else if (action === '暂停编辑') {
       showToast('研究已暂停，您可以修改刺激物配置后继续');
     } else if (action === '下载报告') {
-      showToast('报告正在生成，完成后将自动下载');
+      window.open(getReportDownloadUrl(activeStudyId), '_blank');
     } else if (action === '归档到资产库') {
       showToast('已归档到企业研究资产库');
     } else if (action === '进入消费者验证') {

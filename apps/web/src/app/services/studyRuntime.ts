@@ -379,8 +379,21 @@ export async function listDriftAlerts(
   return requestJson<DriftAlert[]>('/drift-alerts', { signal: options.signal });
 }
 
-export async function createDemoStudy(actor = DEFAULT_ACTOR, question?: string): Promise<StudyBundleResponse> {
+export async function createDemoStudy(
+  actor = DEFAULT_ACTOR,
+  question?: string,
+  options?: {
+    twinVersionIds?: string[];
+    stimulusIds?: string[];
+  },
+): Promise<StudyBundleResponse> {
   const seedPack = await bootstrapSeedAssets();
+  const twinVersionIds = options?.twinVersionIds?.length
+    ? options.twinVersionIds
+    : seedPack.twin_versions.map((item) => item.id);
+  const stimulusIds = options?.stimulusIds?.length
+    ? options.stimulusIds
+    : seedPack.stimuli.map((item) => item.id);
   return requestJson<StudyBundleResponse>('/studies', {
     method: 'POST',
     body: JSON.stringify({
@@ -393,14 +406,18 @@ export async function createDemoStudy(actor = DEFAULT_ACTOR, question?: string):
         objective: '筛出最值得进入下一轮验证的概念',
         decision: 'winner_selection',
       },
-      twin_version_ids: seedPack.twin_versions.map((item) => item.id),
-      stimulus_ids: seedPack.stimuli.map((item) => item.id),
-      qual_config: { mode: 'ai_idi', interviews: 6 },
-      quant_config: { mode: 'ssr', sample_size: 120 },
+      twin_version_ids: twinVersionIds,
+      stimulus_ids: stimulusIds,
+      qual_config: { mode: 'ai_idi', interviews: twinVersionIds.length * stimulusIds.length },
+      quant_config: { mode: 'replica_scoring', replicas: 3 },
       generated_by: actor,
       approval_required: true,
     }),
   });
+}
+
+export function getReportDownloadUrl(studyId: string): string {
+  return `${getApiBase()}/studies/${encodeURIComponent(studyId)}/report`;
 }
 
 export async function submitPlanForApproval(
@@ -470,12 +487,13 @@ export async function resumeRun(
 export async function sendChatMessage(
   studyId: string,
   message: string,
+  history?: Array<{ role: string; content: string }>,
 ): Promise<{ reply: string }> {
   return requestJson<{ reply: string }>(
     `/studies/${encodeURIComponent(studyId)}/chat`,
     {
       method: 'POST',
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ message, history: history ?? [] }),
     },
   );
 }

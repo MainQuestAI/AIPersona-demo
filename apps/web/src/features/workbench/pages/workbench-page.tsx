@@ -156,6 +156,8 @@ export function WorkbenchPage({
     onCardAction?.(action);
   }
 
+  const chatHistoryRef = useRef<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
+
   function handleUserSend(message: string) {
     const now = new Date();
     const ts = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
@@ -170,10 +172,11 @@ export function WorkbenchPage({
 
     setExtraEvents((prev) => [...prev, userEvent]);
 
-    // Call real chat API, fallback to mock on error
     const studyId = projection.study.id;
-    sendChatMessage(studyId, message)
+    sendChatMessage(studyId, message, chatHistoryRef.current)
       .then((res) => {
+        chatHistoryRef.current.push({ role: 'user', content: message });
+        chatHistoryRef.current.push({ role: 'assistant', content: res.reply });
         const agentEvent: ConversationEvent = {
           id: `agent-reply-${currentMsgId}`,
           type: 'agent_message',

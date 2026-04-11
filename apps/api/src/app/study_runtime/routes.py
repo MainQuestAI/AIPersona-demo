@@ -6,7 +6,8 @@ from typing import Any, Optional
 import json
 import os
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse
 from openai import OpenAI
 from pydantic import BaseModel, Field
 
@@ -277,8 +278,36 @@ async def list_drift_alerts() -> list[dict[str, Any]]:
     return []
 
 
+@router.get("/studies/{study_id}/report")
+async def download_study_report(
+    study_id: str,
+    service: StudyRuntimeService = Depends(get_study_runtime_service),
+) -> HTMLResponse:
+    """Download the study report as an HTML file."""
+    bundle = service.get_study_bundle(study_id)
+    artifacts = bundle.get("artifacts", [])
+    report_artifact = next(
+        (a for a in artifacts if a.get("artifact_type") == "report" and a.get("status") == "ready"),
+        None,
+    )
+    if not report_artifact:
+        raise HTTPException(status_code=404, detail="报告尚未生成")
+    manifest = report_artifact.get("artifact_manifest_json", {})
+    html_content = manifest.get("html", "<p>报告内容为空</p>")
+    return HTMLResponse(
+        content=html_content,
+        headers={"Content-Disposition": f'attachment; filename="study-report-{study_id[:8]}.html"'},
+    )
+
+
+class ChatMessage(BaseModel):
+    role: str = Field(pattern=r"^(user|assistant)$")
+    content: str = Field(min_length=1, max_length=4000)
+
+
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
+    history: list[ChatMessage] = Field(default_factory=list, max_length=20)
 
 
 @router.post("/studies/{study_id}/chat")
@@ -328,6 +357,10 @@ async def chat_with_study(
     )
 
     try:
+        history_messages = [
+            {"role": m.role, "content": m.content}
+            for m in payload.history[-10:]
+        ]
         response = client.chat.completions.create(
             model=model,
             messages=[
@@ -340,6 +373,7 @@ async def chat_with_study(
                         f"研究数据：\n{research_context}"
                     ),
                 },
+                *history_messages,
                 {"role": "user", "content": payload.message},
             ],
             max_tokens=2048,
