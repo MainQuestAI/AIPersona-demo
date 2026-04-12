@@ -365,6 +365,7 @@ export interface DemoScenarioBundle {
   trustPanel: TrustPanelData;
   replay: ReplayData;
   libraryRecords: LibraryRecord[];
+  _isMockData?: boolean;
 }
 
 export type DemoScenarioRegistry = Record<DemoScenarioId, DemoScenarioBundle>;

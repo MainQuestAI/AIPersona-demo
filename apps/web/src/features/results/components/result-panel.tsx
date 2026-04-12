@@ -43,6 +43,8 @@ export function ResultPanel({
   const approvalStatus = rawApprovalStatus;
   const approvalLabel = (rawApprovalStatus ? APPROVAL_LABELS[rawApprovalStatus] : undefined) ?? '草稿';
 
+  const isMock = scenario._isMockData === true;
+
   // Mid-run review state
   if (runStatus === 'awaiting_midrun_approval') {
     return (
@@ -249,6 +251,12 @@ export function ResultPanel({
   // Completed state — Tab view
   return (
     <section className="space-y-4">
+      {isMock ? (
+        <div className="rounded-btn border border-warning/30 bg-warning/5 px-3 py-2 text-[0.65rem] text-warning">
+          以下为示例数据，研究尚未产出真实结果。
+        </div>
+      ) : null}
+
       <RecommendationSummary recommendation={scenario.resultPanel.recommendation} />
 
       {/* Tab bar */}

@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 import hashlib
 import logging
+import sys
 
 import uvicorn
 from fastapi import FastAPI, Request, Response

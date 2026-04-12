@@ -683,6 +683,23 @@ class PostgresStudyRuntimeRepository:
                 row = cursor.fetchone()
         return self._serialize_record(row) if row else None
 
+    def get_persona_profile_by_twin_id(self, twin_id: str) -> dict[str, Any] | None:
+        """Look up persona_profile via consumer_twin.persona_profile_id."""
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT pp.*, ta.label AS target_audience_label
+                    FROM consumer_twin ct
+                    JOIN persona_profile pp ON pp.id = ct.persona_profile_id
+                    JOIN target_audience ta ON ta.id = pp.target_audience_id
+                    WHERE ct.id = %s
+                    """,
+                    (twin_id,),
+                )
+                row = cursor.fetchone()
+        return self._serialize_record(row) if row else None
+
     def list_twin_versions(self) -> list[dict[str, Any]]:
         with self._connect() as connection:
             with connection.cursor() as cursor:

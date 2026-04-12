@@ -990,7 +990,9 @@ export function getPitchScenarioBundle(
     return enrichScenarioForProjection(projection, artifactBundle);
   }
   // Fallback: use mock scenario for structural completeness.
-  // This keeps the UI functional even when real artifacts haven't been generated yet.
+  // Mark as mock so the UI can distinguish from real data.
   const fallback = getScenarioBundle(selectScenarioIdForProjection(projection));
-  return enrichScenarioForProjection(projection, fallback);
+  const enriched = enrichScenarioForProjection(projection, fallback);
+  enriched._isMockData = true;
+  return enriched;
 }

@@ -403,8 +403,15 @@ async def chat_with_persona(
     payload: PersonaChatRequest,
     service: StudyRuntimeService = Depends(get_study_runtime_service),
 ) -> dict[str, str]:
-    """Chat with a persona independently, outside of a study context."""
+    """Chat with a persona independently, outside of a study context.
+
+    profile_id can be either a persona_profile.id or a consumer_twin.id.
+    The frontend routes pass consumer_twin.id as the path parameter.
+    """
     profile = service.repository.get_persona_profile(profile_id)
+    if profile is None:
+        # Fallback: try treating profile_id as a consumer_twin.id
+        profile = service.repository.get_persona_profile_by_twin_id(profile_id)
     if profile is None:
         raise HTTPException(status_code=404, detail="Persona 画像不存在")
 
@@ -985,6 +992,12 @@ async def reply_to_agent(
 
     # Handle action-based replies
     if payload.action_id == "confirm_plan":
+        # Idempotency: if a run already exists (running/queued/awaiting), return it
+        existing_runs = bundle.get("study_runs", [])
+        for existing_run in existing_runs:
+            if existing_run.get("status") in ("running", "queued", "awaiting_midrun_approval", "succeeded"):
+                return {"status": "already_started", "run_id": str(existing_run.get("id", ""))}
+
         # User confirmed the plan — walk the full approval chain, then start workflow
         versions = bundle.get("plan_versions", [])
         latest_version = versions[-1] if versions else None

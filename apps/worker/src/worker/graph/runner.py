@@ -11,6 +11,32 @@ from worker.graph.builder import compile_graph
 logger = logging.getLogger(__name__)
 
 
+def _fail_run(study_id: str, run_id: str, error_msg: str) -> None:
+    """Mark run as failed in DB and post error message to frontend."""
+    try:
+        import psycopg
+        from psycopg.rows import dict_row
+        from psycopg.types.json import Json
+        database_url = os.environ.get("DATABASE_URL", "")
+        if not database_url:
+            return
+        with psycopg.connect(database_url, row_factory=dict_row) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE study_run SET status='failed', ended_at=now(), updated_at=now() WHERE id=%s",
+                    (run_id,),
+                )
+                cur.execute(
+                    "INSERT INTO study_message (study_id, role, content, message_type, metadata_json) "
+                    "VALUES (%s, 'agent', %s, 'error', %s)",
+                    (study_id, f"研究执行出错：{error_msg[:200]}。请检查日志或重新开始。", Json({})),
+                )
+            conn.commit()
+        logger.info("run_marked_failed run=%s", run_id)
+    except Exception:
+        logger.exception("fail_run_error run=%s", run_id)
+
+
 def _get_checkpointer() -> Any:
     """Create a PostgresSaver checkpointer if available, else None."""
     database_url = os.getenv("DATABASE_URL", "").strip()
@@ -64,16 +90,7 @@ def start_research(study_id: str, run_id: str) -> None:
         logger.info("langgraph_completed study=%s run=%s", study_id, run_id)
     except Exception as exc:
         logger.exception("langgraph_failed study=%s run=%s error=%s", study_id, run_id, exc)
-        # Post error message to frontend
-        try:
-            from worker.graph.nodes import _post_message
-            _post_message(
-                study_id, "agent",
-                f"研究执行出错：{type(exc).__name__}。请检查日志或重新开始。",
-                message_type="error",
-            )
-        except Exception:
-            pass
+        _fail_run(study_id, run_id, str(exc))
 
 
 def resume_research(
@@ -111,3 +128,11 @@ def resume_research(
         logger.info("langgraph_resume_completed run=%s", run_id)
     except Exception as exc:
         logger.exception("langgraph_resume_failed run=%s error=%s", run_id, exc)
+        # Try to get study_id from the checkpoint state for error reporting
+        try:
+            state = checkpointer.get(config)
+            sid = state.get("study_id", "") if state else ""
+            if sid:
+                _fail_run(sid, run_id, str(exc))
+        except Exception:
+            pass
