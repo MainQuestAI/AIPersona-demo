@@ -1,9 +1,12 @@
 import { BookOpen, Loader2, Send, Sparkles } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import { sendStreamChat } from '../hooks/useStreamChat';
+import { ThinkingBlock } from '../components/thinking-block';
 import { useEffect, useRef, useState } from 'react';
 
 const API_BASE = (import.meta.env.VITE_STUDY_RUNTIME_API_URL || 'http://127.0.0.1:8000') as string;
 
-type ChatMessage = { role: 'user' | 'assistant'; content: string };
+type ChatMessage = { role: 'user' | 'assistant'; content: string; thinking?: string };
 
 export function SagePage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -26,24 +29,36 @@ export function SagePage() {
     setInput('');
     setSending(true);
 
+    const assistantIdx = messages.length + 1;
+    setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
+
+    const history = [...messages, userMsg].map((m) => ({
+      role: m.role === 'assistant' ? 'assistant' : 'user',
+      content: m.content,
+    }));
+
     try {
-      const history = [...messages, userMsg].map((m) => ({
-        role: m.role === 'assistant' ? 'assistant' : 'user',
-        content: m.content,
-      }));
-      const resp = await fetch(`${API_BASE}/sage/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: text,
-          history,
-          knowledge_context: knowledgeContext,
-        }),
-      });
-      const data = await resp.json();
-      setMessages((prev) => [...prev, { role: 'assistant', content: data.reply || '暂时无法回答' }]);
+      await sendStreamChat(
+        `${API_BASE}/sage/chat`,
+        { message: text, history, knowledge_context: knowledgeContext },
+        (state) => {
+          setMessages((prev) => {
+            const updated = [...prev];
+            updated[assistantIdx] = {
+              role: 'assistant',
+              content: state.content,
+              thinking: state.thinking || undefined,
+            };
+            return updated;
+          });
+        },
+      );
     } catch {
-      setMessages((prev) => [...prev, { role: 'assistant', content: '服务暂时不可用' }]);
+      setMessages((prev) => {
+        const updated = [...prev];
+        updated[assistantIdx] = { role: 'assistant', content: '服务暂时不可用' };
+        return updated;
+      });
     } finally {
       setSending(false);
     }
@@ -133,10 +148,11 @@ export function SagePage() {
               className={`max-w-[75%] rounded-xl px-4 py-2.5 text-sm leading-6 ${
                 msg.role === 'user'
                   ? 'bg-accent/20 text-text'
-                  : 'glass-panel text-muted'
+                  : 'glass-panel text-muted prose-invert'
               }`}
             >
-              {msg.content}
+              {msg.thinking ? <ThinkingBlock content={msg.thinking} isStreaming={sending && !msg.content} /> : null}
+              {msg.role === 'assistant' ? <ReactMarkdown>{msg.content}</ReactMarkdown> : msg.content}
             </div>
           </div>
         ))}

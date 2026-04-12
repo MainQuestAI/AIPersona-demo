@@ -1,16 +1,19 @@
 import { ArrowLeft, Loader2, Send } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import {
-  chatWithPersona,
   listConsumerTwins,
   type ConsumerTwinRecord,
 } from '../services/studyRuntime';
+import { sendStreamChat } from '../hooks/useStreamChat';
+import { ThinkingBlock } from '../components/thinking-block';
 
 type ChatMessage = {
   role: 'user' | 'assistant';
   content: string;
+  thinking?: string;
 };
 
 function PersonaAvatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' | 'lg' }) {
@@ -71,15 +74,38 @@ export function PersonaChatPage() {
     setInput('');
     setSending(true);
 
+    // Add a placeholder assistant message that will be updated via streaming
+    const assistantIdx = messages.length + 1; // index after user msg
+    setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
+
+    const history = [...messages, userMsg].map((m) => ({
+      role: m.role === 'assistant' ? 'assistant' : 'user',
+      content: m.content,
+    }));
+    const apiBase = (import.meta.env.VITE_STUDY_RUNTIME_API_URL || 'http://127.0.0.1:8000') as string;
+
     try {
-      const history = [...messages, userMsg].map((m) => ({
-        role: m.role === 'assistant' ? 'assistant' : 'user',
-        content: m.content,
-      }));
-      const { reply } = await chatWithPersona(profileId, text, history);
-      setMessages((prev) => [...prev, { role: 'assistant', content: reply }]);
+      await sendStreamChat(
+        `${apiBase}/persona-profiles/${encodeURIComponent(profileId)}/chat`,
+        { message: text, history },
+        (state) => {
+          setMessages((prev) => {
+            const updated = [...prev];
+            updated[assistantIdx] = {
+              role: 'assistant',
+              content: state.content,
+              thinking: state.thinking || undefined,
+            };
+            return updated;
+          });
+        },
+      );
     } catch {
-      setMessages((prev) => [...prev, { role: 'assistant', content: '抱歉，对话服务暂时不可用。' }]);
+      setMessages((prev) => {
+        const updated = [...prev];
+        updated[assistantIdx] = { role: 'assistant', content: '抱歉，对话服务暂时不可用。' };
+        return updated;
+      });
     } finally {
       setSending(false);
     }
@@ -174,10 +200,11 @@ export function PersonaChatPage() {
               className={`max-w-[75%] rounded-xl px-4 py-2.5 text-sm leading-6 ${
                 msg.role === 'user'
                   ? 'bg-accent/20 text-text'
-                  : 'glass-panel text-muted'
+                  : 'glass-panel text-muted prose-invert'
               }`}
             >
-              {msg.content}
+              {msg.thinking ? <ThinkingBlock content={msg.thinking} isStreaming={sending && !msg.content} /> : null}
+              {msg.role === 'assistant' ? <ReactMarkdown>{msg.content}</ReactMarkdown> : msg.content}
             </div>
           </div>
         ))}

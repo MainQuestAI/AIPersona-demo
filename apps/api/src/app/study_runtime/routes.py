@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 from app.study_runtime.projections import build_workbench_projection
+from app.study_runtime.streaming import create_llm_stream, model_supports_thinking
 from app.study_runtime.gateway import LangGraphStudyGateway
 from app.study_runtime.repository import PostgresStudyRuntimeRepository
 from app.study_runtime.service import (
@@ -401,8 +402,9 @@ async def chat_with_persona(
     request: Request,
     profile_id: str,
     payload: PersonaChatRequest,
+    stream: bool = False,
     service: StudyRuntimeService = Depends(get_study_runtime_service),
-) -> dict[str, str]:
+):
     """Chat with a persona independently, outside of a study context.
 
     profile_id can be either a persona_profile.id or a consumer_twin.id.
@@ -435,21 +437,15 @@ async def chat_with_persona(
         base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
     )
 
+    history_messages = [{"role": m.role, "content": m.content} for m in payload.history[-20:]]
+    messages = [{"role": "system", "content": system_prompt}, *history_messages, {"role": "user", "content": payload.message}]
+
+    if stream:
+        return create_llm_stream(client, model, messages, max_tokens=1024, temperature=0.7,
+                                  enable_thinking=model_supports_thinking(model))
+
     try:
-        history_messages = [
-            {"role": m.role, "content": m.content}
-            for m in payload.history[-20:]
-        ]
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                *history_messages,
-                {"role": "user", "content": payload.message},
-            ],
-            max_tokens=1024,
-            temperature=0.7,
-        )
+        response = client.chat.completions.create(model=model, messages=messages, max_tokens=1024, temperature=0.7)
         reply = response.choices[0].message.content if response.choices else ""
         return {"reply": reply or "（无回复）"}
     except Exception as exc:
@@ -467,8 +463,9 @@ class SageChatRequest(BaseModel):
 async def sage_chat(
     request: Request,
     payload: SageChatRequest,
+    stream: bool = False,
     service: StudyRuntimeService = Depends(get_study_runtime_service),
-) -> dict[str, str]:
+):
     """AI Sage: expert consultant that uses research knowledge to answer questions."""
     settings = request.app.state.settings
     api_key = settings.dashscope_api_key
@@ -493,27 +490,22 @@ async def sage_chat(
     knowledge = "\n\n".join(knowledge_parts) if knowledge_parts else "暂无知识库数据。"
 
     client = OpenAI(api_key=api_key, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
+    history_messages = [{"role": m.role, "content": m.content} for m in payload.history[-20:]]
+    sage_system = (
+        "你是 AI Sage，一位资深消费者研究专家和战略顾问。\n"
+        "你基于积累的研究知识库来回答问题，提供专业的消费者洞察和战略建议。\n"
+        "回答风格：专业但易懂，引用具体数据和案例，给出可执行的建议。\n"
+        "如果知识库中没有相关信息，诚实说明并提供基于通用消费者研究方法论的建议。\n\n"
+        f"知识库：\n{knowledge}"
+    )
+    messages = [{"role": "system", "content": sage_system}, *history_messages, {"role": "user", "content": payload.message}]
+
+    if stream:
+        return create_llm_stream(client, model, messages, max_tokens=2048, temperature=0.7,
+                                  enable_thinking=model_supports_thinking(model))
+
     try:
-        history_messages = [{"role": m.role, "content": m.content} for m in payload.history[-20:]]
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "你是 AI Sage，一位资深消费者研究专家和战略顾问。\n"
-                        "你基于积累的研究知识库来回答问题，提供专业的消费者洞察和战略建议。\n"
-                        "回答风格：专业但易懂，引用具体数据和案例，给出可执行的建议。\n"
-                        "如果知识库中没有相关信息，诚实说明并提供基于通用消费者研究方法论的建议。\n\n"
-                        f"知识库：\n{knowledge}"
-                    ),
-                },
-                *history_messages,
-                {"role": "user", "content": payload.message},
-            ],
-            max_tokens=2048,
-            temperature=0.7,
-        )
+        response = client.chat.completions.create(model=model, messages=messages, max_tokens=2048, temperature=0.7)
         reply = response.choices[0].message.content if response.choices else ""
         return {"reply": reply or "暂时无法回答"}
     except Exception as exc:
@@ -954,7 +946,7 @@ async def chat_with_study(
 @router.get("/studies/{study_id}/agent/messages")
 async def get_agent_messages(
     study_id: str,
-    after: str | None = None,
+    after: Optional[str] = None,
     service: StudyRuntimeService = Depends(get_study_runtime_service),
 ) -> dict[str, Any]:
     """Poll for agent conversation messages."""
@@ -965,7 +957,7 @@ async def get_agent_messages(
 class AgentReplyRequest(BaseModel):
     action_id: str = ""
     action: str = Field(min_length=1, max_length=4000)
-    comment: str | None = None
+    comment: Optional[str] = None
 
 
 @router.post("/studies/{study_id}/agent/reply")
@@ -1284,7 +1276,7 @@ class RegisterRequest(BaseModel):
     email: str = Field(min_length=3, max_length=200)
     display_name: str = Field(min_length=1, max_length=100)
     password: str = Field(min_length=6, max_length=200)
-    team_name: str | None = None
+    team_name: Optional[str] = None
 
 
 class LoginRequest(BaseModel):
