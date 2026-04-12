@@ -1123,3 +1123,21 @@ class PostgresStudyRuntimeRepository:
                 )
                 rows = cursor.fetchall()
         return [self._serialize_record(row) for row in rows]
+
+    def list_team_memories(self, team_id: str) -> list[dict[str, Any]]:
+        """Return all shared memories for a team."""
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT sm.*, s.business_question AS study_question
+                    FROM study_memory sm
+                    JOIN study s ON s.id = sm.study_id
+                    WHERE sm.team_id = %s AND sm.is_team_shared = true
+                      AND sm.superseded_by IS NULL
+                    ORDER BY sm.extracted_at DESC
+                    """,
+                    (team_id,),
+                )
+                rows = cursor.fetchall()
+        return [self._serialize_record(row) for row in rows]

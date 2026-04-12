@@ -305,6 +305,45 @@ async def generate_persona(
     return result
 
 
+class BatchGenerateRequest(BaseModel):
+    texts: list[str] = Field(min_length=1, max_length=50)
+    audience_label: str = Field(min_length=2, max_length=100)
+    source: str = "social_media"
+
+
+@router.post("/persona-profiles/generate-batch")
+async def generate_persona_batch(
+    request: Request,
+    payload: BatchGenerateRequest,
+    service: StudyRuntimeService = Depends(get_study_runtime_service),
+) -> dict[str, Any]:
+    """Batch-generate personas from multiple social media texts."""
+    results = []
+    errors = []
+
+    for i, text in enumerate(payload.texts):
+        if len(text.strip()) < 30:
+            errors.append({"index": i, "error": "文本不足 30 字，已跳过"})
+            continue
+
+        try:
+            single_payload = GeneratePersonaRequest(
+                text=text[:50000],
+                audience_label=payload.audience_label,
+            )
+            result = await generate_persona(request, single_payload, service)
+            results.append(result)
+        except Exception as exc:
+            errors.append({"index": i, "error": str(exc)})
+
+    return {
+        "total": len(payload.texts),
+        "created": len(results),
+        "errors": errors,
+        "personas": results,
+    }
+
+
 @router.post("/persona-profiles/upload")
 async def upload_persona_pdf(
     request: Request,
@@ -403,6 +442,70 @@ async def chat_with_persona(
     except Exception as exc:
         logger.warning("persona_chat_error: %s", exc)
         return {"reply": "抱歉，对话服务暂时不可用，请稍后重试。"}
+
+
+class SageChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+    history: list[ChatMessage] = Field(default_factory=list, max_length=30)
+    knowledge_context: str = ""
+
+
+@router.post("/sage/chat")
+async def sage_chat(
+    request: Request,
+    payload: SageChatRequest,
+    service: StudyRuntimeService = Depends(get_study_runtime_service),
+) -> dict[str, str]:
+    """AI Sage: expert consultant that uses research knowledge to answer questions."""
+    settings = request.app.state.settings
+    api_key = settings.dashscope_api_key
+    model = settings.dashscope_model
+
+    if not api_key:
+        return {"reply": "AI 服务未配置"}
+
+    # Build knowledge context from memories + user-provided context
+    knowledge_parts = []
+    if payload.knowledge_context:
+        knowledge_parts.append(f"用户提供的知识：\n{payload.knowledge_context}")
+
+    try:
+        memories = service.repository.list_recent_memories(limit=20)
+        if memories:
+            memory_text = "\n".join(f"- [{m['memory_type']}] {m['key']}: {m['value']}" for m in memories)
+            knowledge_parts.append(f"历史研究记忆：\n{memory_text}")
+    except Exception:
+        pass
+
+    knowledge = "\n\n".join(knowledge_parts) if knowledge_parts else "暂无知识库数据。"
+
+    client = OpenAI(api_key=api_key, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
+    try:
+        history_messages = [{"role": m.role, "content": m.content} for m in payload.history[-20:]]
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "你是 AI Sage，一位资深消费者研究专家和战略顾问。\n"
+                        "你基于积累的研究知识库来回答问题，提供专业的消费者洞察和战略建议。\n"
+                        "回答风格：专业但易懂，引用具体数据和案例，给出可执行的建议。\n"
+                        "如果知识库中没有相关信息，诚实说明并提供基于通用消费者研究方法论的建议。\n\n"
+                        f"知识库：\n{knowledge}"
+                    ),
+                },
+                *history_messages,
+                {"role": "user", "content": payload.message},
+            ],
+            max_tokens=2048,
+            temperature=0.7,
+        )
+        reply = response.choices[0].message.content if response.choices else ""
+        return {"reply": reply or "暂时无法回答"}
+    except Exception as exc:
+        logger.warning("sage_chat_error: %s", exc)
+        return {"reply": "抱歉，AI Sage 暂时不可用。"}
 
 
 @router.get("/twin-versions")
@@ -1151,4 +1254,139 @@ async def list_api_keys(
                 rows = cur.fetchall()
         return [dict(row) for row in rows]
     except Exception:
-        return []
+        return []  # api_key table may not exist
+
+
+# ---------------------------------------------------------------------------
+#  Auth: User Registration & Login
+# ---------------------------------------------------------------------------
+
+class RegisterRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=200)
+    display_name: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=6, max_length=200)
+    team_name: str | None = None
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+@router.post("/auth/register")
+async def register_user(payload: RegisterRequest) -> dict[str, Any]:
+    """Register a new user and optionally create a team."""
+    password_hash = hashlib.sha256(payload.password.encode()).hexdigest()
+    token = secrets.token_urlsafe(32)
+
+    try:
+        import psycopg
+        from psycopg.rows import dict_row
+        from app.core.config import get_settings
+        settings = get_settings()
+        with psycopg.connect(settings.database_url, row_factory=dict_row) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM app_user WHERE email=%s", (payload.email,))
+                if cur.fetchone():
+                    raise HTTPException(status_code=409, detail="该邮箱已注册")
+                cur.execute(
+                    "INSERT INTO app_user (email, display_name, password_hash) "
+                    "VALUES (%s, %s, %s) RETURNING id, email, display_name, role",
+                    (payload.email, payload.display_name, password_hash),
+                )
+                user = dict(cur.fetchone())
+                team = None
+                if payload.team_name:
+                    slug = payload.team_name.lower().replace(" ", "-")[:50]
+                    cur.execute(
+                        "INSERT INTO team (name, slug, owner_id) VALUES (%s, %s, %s) RETURNING id, name, slug",
+                        (payload.team_name, slug, user["id"]),
+                    )
+                    team = dict(cur.fetchone())
+                    cur.execute(
+                        "INSERT INTO team_member (team_id, user_id, role) VALUES (%s, %s, 'owner')",
+                        (team["id"], user["id"]),
+                    )
+            conn.commit()
+        return {
+            "user": {k: str(v) for k, v in user.items()},
+            "team": {k: str(v) for k, v in team.items()} if team else None,
+            "token": token,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("register_error: %s", exc)
+        raise HTTPException(status_code=500, detail="注册失败，请确保已运行 migration 007")
+
+
+@router.post("/auth/login")
+async def login_user(payload: LoginRequest) -> dict[str, Any]:
+    """Login with email and password."""
+    password_hash = hashlib.sha256(payload.password.encode()).hexdigest()
+    try:
+        import psycopg
+        from psycopg.rows import dict_row
+        from app.core.config import get_settings
+        settings = get_settings()
+        with psycopg.connect(settings.database_url, row_factory=dict_row) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, email, display_name, role FROM app_user "
+                    "WHERE email=%s AND password_hash=%s AND is_active=true",
+                    (payload.email, password_hash),
+                )
+                user = cur.fetchone()
+                if not user:
+                    raise HTTPException(status_code=401, detail="邮箱或密码错误")
+                cur.execute(
+                    "SELECT t.id, t.name, t.slug, tm.role AS member_role "
+                    "FROM team_member tm JOIN team t ON t.id=tm.team_id WHERE tm.user_id=%s",
+                    (user["id"],),
+                )
+                teams = [dict(row) for row in cur.fetchall()]
+        token = secrets.token_urlsafe(32)
+        return {
+            "user": {k: str(v) for k, v in dict(user).items()},
+            "teams": [{k: str(v) for k, v in t.items()} for t in teams],
+            "token": token,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("login_error: %s", exc)
+        raise HTTPException(status_code=500, detail="登录失败")
+
+
+@router.post("/teams/{team_id}/invite")
+async def invite_team_member(team_id: str, payload: RegisterRequest) -> dict[str, Any]:
+    """Invite a user to a team (creates account if needed)."""
+    password_hash = hashlib.sha256(payload.password.encode()).hexdigest()
+    try:
+        import psycopg
+        from psycopg.rows import dict_row
+        from app.core.config import get_settings
+        settings = get_settings()
+        with psycopg.connect(settings.database_url, row_factory=dict_row) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM app_user WHERE email=%s", (payload.email,))
+                row = cur.fetchone()
+                if row:
+                    user_id = row["id"]
+                else:
+                    cur.execute(
+                        "INSERT INTO app_user (email, display_name, password_hash) "
+                        "VALUES (%s, %s, %s) RETURNING id",
+                        (payload.email, payload.display_name, password_hash),
+                    )
+                    user_id = cur.fetchone()["id"]
+                cur.execute(
+                    "INSERT INTO team_member (team_id, user_id, role) VALUES (%s, %s, 'member') "
+                    "ON CONFLICT (team_id, user_id) DO NOTHING",
+                    (team_id, user_id),
+                )
+            conn.commit()
+        return {"status": "invited", "user_id": str(user_id)}
+    except Exception as exc:
+        logger.warning("invite_error: %s", exc)
+        raise HTTPException(status_code=500, detail="邀请失败")

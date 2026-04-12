@@ -24,7 +24,7 @@ type State =
   | { status: 'ready'; twins: ConsumerTwinRecord[] }
   | { status: 'error'; message: string };
 
-type InputMode = 'text' | 'pdf';
+type InputMode = 'text' | 'pdf' | 'batch';
 
 const AUDIENCE_FILTERS = [
   '全部',
@@ -178,6 +178,40 @@ export function ConsumerTwinsPage() {
     if (!text.trim() || !audienceLabel.trim()) return;
     setGenerating(true);
     setGenError(null);
+
+    // Batch mode: split by double newlines and call batch endpoint
+    if (inputMode === 'batch') {
+      const texts = text.split(/\n\s*\n/).map((t) => t.trim()).filter((t) => t.length >= 30);
+      if (texts.length === 0) {
+        setGenError('至少需要一条 30 字以上的文本');
+        setGenerating(false);
+        return;
+      }
+      try {
+        const apiBase = (import.meta.env.VITE_STUDY_RUNTIME_API_URL || 'http://127.0.0.1:8000') as string;
+        const resp = await fetch(`${apiBase}/persona-profiles/generate-batch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ texts, audience_label: audienceLabel, source: 'social_media' }),
+        });
+        if (!resp.ok) throw new Error(`批量生成失败：${resp.status}`);
+        const data = await resp.json();
+        setText('');
+        setAudienceLabel('');
+        setShowForm(false);
+        const twins = await listConsumerTwins();
+        setState({ status: 'ready', twins });
+        if (data.errors?.length) {
+          setGenError(`成功 ${data.created} 个，${data.errors.length} 个失败`);
+        }
+      } catch (error) {
+        setGenError(error instanceof Error ? error.message : '批量生成失败');
+      } finally {
+        setGenerating(false);
+      }
+      return;
+    }
+
     try {
       await generatePersona(text, audienceLabel);
       setText('');
@@ -272,6 +306,15 @@ export function ConsumerTwinsPage() {
               <FileUp className="inline h-3.5 w-3.5 mr-1" />
               上传 PDF
             </button>
+            <button
+              type="button"
+              onClick={() => setInputMode('batch')}
+              className={`px-3 py-1.5 rounded-btn text-xs font-medium transition ${
+                inputMode === 'batch' ? 'bg-accent/20 text-accent' : 'text-muted hover:text-text'
+              }`}
+            >
+              社媒批量导入
+            </button>
           </div>
 
           <div className="space-y-4">
@@ -304,6 +347,23 @@ export function ConsumerTwinsPage() {
                 />
                 <div className="mt-1 text-[0.6rem] text-tertiary">
                   至少 50 字。AI 将从文本中提取 7 个维度（人口统计/地理/行为/心理/需求/技术接受度/社交关系），自动生成可用于研究的 Persona。
+                </div>
+              </div>
+            ) : inputMode === 'batch' ? (
+              <div>
+                <label htmlFor="batch-text" className="text-xs font-medium text-muted">
+                  社媒文本（每段用空行分隔）
+                </label>
+                <textarea
+                  id="batch-text"
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder={"粘贴多条社媒文本（小红书/抖音/Instagram），用空行分隔每条内容...\n\n例如：\n今天试了一款孕期饮品，口感不错，但是有点甜...\n\n作为二胎妈妈，我觉得营养品最重要的是方便..."}
+                  rows={8}
+                  className="mt-1 w-full rounded-btn border border-line bg-panel px-3 py-2 text-sm text-text placeholder:text-tertiary focus:border-accent/50 focus:outline-none resize-y"
+                />
+                <div className="mt-1 text-[0.6rem] text-tertiary">
+                  粘贴多条社媒帖子，用空行分隔。AI 将从每条文本中批量生成独立的 Persona。
                 </div>
               </div>
             ) : (
@@ -350,7 +410,7 @@ export function ConsumerTwinsPage() {
               disabled={
                 generating ||
                 !audienceLabel.trim() ||
-                (inputMode === 'text' ? text.trim().length < 50 : !pdfFile)
+                (inputMode === 'text' ? text.trim().length < 50 : inputMode === 'batch' ? text.trim().length < 30 : !pdfFile)
               }
               className="btn-primary"
             >
