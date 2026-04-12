@@ -304,10 +304,13 @@ async def generate_persona(
 
 
 class BatchGenerateRequest(BaseModel):
-    texts: list[str] = Field(min_length=1, max_length=50)
+    texts: list[str] = Field(min_length=1, max_length=20)
     audience_label: str = Field(min_length=2, max_length=100)
     source: str = "social_media"
 
+
+# Limit concurrent LLM calls for batch generation
+_BATCH_CONCURRENCY = 3
 
 @router.post("/persona-profiles/generate-batch")
 async def generate_persona_batch(
@@ -315,24 +318,29 @@ async def generate_persona_batch(
     payload: BatchGenerateRequest,
     service: StudyRuntimeService = Depends(get_study_runtime_service),
 ) -> dict[str, Any]:
-    """Batch-generate personas from multiple social media texts."""
-    results = []
-    errors = []
+    """Batch-generate personas from multiple social media texts (max 20, 3 concurrent)."""
+    import asyncio
 
-    for i, text in enumerate(payload.texts):
+    results: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+    sem = asyncio.Semaphore(_BATCH_CONCURRENCY)
+
+    async def _process_one(i: int, text: str) -> None:
         if len(text.strip()) < 30:
             errors.append({"index": i, "error": "文本不足 30 字，已跳过"})
-            continue
+            return
+        async with sem:
+            try:
+                single_payload = GeneratePersonaRequest(
+                    text=text[:50000],
+                    audience_label=payload.audience_label,
+                )
+                result = await generate_persona(request, single_payload, service)
+                results.append(result)
+            except Exception as exc:
+                errors.append({"index": i, "error": str(exc)})
 
-        try:
-            single_payload = GeneratePersonaRequest(
-                text=text[:50000],
-                audience_label=payload.audience_label,
-            )
-            result = await generate_persona(request, single_payload, service)
-            results.append(result)
-        except Exception as exc:
-            errors.append({"index": i, "error": str(exc)})
+    await asyncio.gather(*[_process_one(i, t) for i, t in enumerate(payload.texts)])
 
     return {
         "total": len(payload.texts),
@@ -1359,8 +1367,13 @@ async def login_user(payload: LoginRequest) -> dict[str, Any]:
 
 
 @router.post("/teams/{team_id}/invite")
-async def invite_team_member(team_id: str, payload: RegisterRequest) -> dict[str, Any]:
-    """Invite a user to a team (creates account if needed)."""
+async def invite_team_member(team_id: str, request: Request, payload: RegisterRequest) -> dict[str, Any]:
+    """Invite a user to a team (creates account if needed). Requires caller to be a team member."""
+    # Verify caller is a member of this team
+    caller_id = request.headers.get("X-User-Id", "")
+    if not caller_id:
+        raise HTTPException(status_code=401, detail="需要登录后才能邀请成员（缺少 X-User-Id）")
+
     password_hash = hashlib.pbkdf2_hmac("sha256", payload.password.encode(), b"aipersona-salt-v1", 100_000).hex()
     try:
         import psycopg
@@ -1369,6 +1382,15 @@ async def invite_team_member(team_id: str, payload: RegisterRequest) -> dict[str
         settings = get_settings()
         with psycopg.connect(settings.database_url, row_factory=dict_row) as conn:
             with conn.cursor() as cur:
+                # Check caller is a team member with admin/owner role
+                cur.execute(
+                    "SELECT role FROM team_member WHERE team_id=%s AND user_id=%s",
+                    (team_id, caller_id),
+                )
+                member = cur.fetchone()
+                if not member or member["role"] not in ("owner", "admin"):
+                    raise HTTPException(status_code=403, detail="只有团队管理员可以邀请成员")
+
                 cur.execute("SELECT id FROM app_user WHERE email=%s", (payload.email,))
                 row = cur.fetchone()
                 if row:

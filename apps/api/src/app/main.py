@@ -15,9 +15,21 @@ from app.core.logging import configure_logging
 logger = logging.getLogger(__name__)
 
 
+def _setup_worker_path() -> None:
+    """Add worker src to sys.path once at startup (not per-thread)."""
+    import os
+    worker_src = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "worker", "src")
+    )
+    if worker_src not in sys.path:
+        sys.path.insert(0, worker_src)
+        logger.info("worker_path_added path=%s", worker_src)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = app.state.settings
+    _setup_worker_path()
     logger.info(
         "api_starting",
         extra={

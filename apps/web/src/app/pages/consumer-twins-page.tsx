@@ -410,7 +410,11 @@ export function ConsumerTwinsPage() {
               disabled={
                 generating ||
                 !audienceLabel.trim() ||
-                (inputMode === 'text' ? text.trim().length < 50 : inputMode === 'batch' ? text.trim().length < 30 : !pdfFile)
+                (inputMode === 'text'
+                  ? text.trim().length < 50
+                  : inputMode === 'batch'
+                    ? text.trim().length < 30
+                    : !pdfFile)
               }
               className="btn-primary"
             >

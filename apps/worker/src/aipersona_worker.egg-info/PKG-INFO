@@ -1,7 +1,0 @@
-Metadata-Version: 2.4
-Name: aipersona-worker
-Version: 0.1.0
-Summary: Temporal worker runtime entry for the AIpersona demo
-Requires-Python: >=3.9
-Requires-Dist: psycopg[binary]<4.0,>=3.2
-Requires-Dist: temporalio<2.0,>=1.0

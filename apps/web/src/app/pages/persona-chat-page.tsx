@@ -166,7 +166,7 @@ export function PersonaChatPage() {
         ) : null}
 
         {messages.map((msg, i) => (
-          <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+          <div key={`${msg.role}-${i}-${msg.content.slice(0, 20)}`} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             {msg.role === 'assistant' ? (
               <PersonaAvatar name={name} size="sm" />
             ) : null}
