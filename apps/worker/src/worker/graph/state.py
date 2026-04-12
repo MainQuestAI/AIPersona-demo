@@ -28,7 +28,7 @@ class ResearchState(TypedDict, total=False):
 
     # Interview tracking
     interviews: Annotated[list[dict[str, Any]], operator.add]
-    interview_pairs: list[tuple[int, int]]  # (twin_idx, stimulus_idx) queue
+    interview_pairs: list[list[int]]  # [[twin_idx, stimulus_idx], ...] queue (list not tuple for JSON serialization)
     interview_index: int
 
     # Analysis results

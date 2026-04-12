@@ -40,6 +40,16 @@ def start_research(study_id: str, run_id: str) -> None:
     logger.info("langgraph_start study=%s run=%s", study_id, run_id)
 
     checkpointer = _get_checkpointer()
+    if checkpointer is None:
+        error_msg = "Cannot start research without checkpointer (DATABASE_URL required for LangGraph persistence)"
+        logger.error(error_msg)
+        try:
+            from worker.graph.nodes import _post_message
+            _post_message(study_id, "agent", f"研究启动失败：{error_msg}", message_type="error")
+        except Exception:
+            pass
+        return
+
     graph = compile_graph(checkpointer=checkpointer)
 
     initial_state = {
@@ -80,18 +90,23 @@ def resume_research(
 
     checkpointer = _get_checkpointer()
     if checkpointer is None:
-        logger.error("Cannot resume without checkpointer")
+        logger.error("Cannot resume without checkpointer — graph state is lost")
         return
 
     graph = compile_graph(checkpointer=checkpointer)
     config = {"configurable": {"thread_id": f"research-{run_id}"}}
 
     try:
-        # Resume from interrupt with human input
+        from langgraph.types import Command
+
+        # Resume from interrupt, passing human decision to the interrupt() call
         graph.invoke(
-            None,  # No new state — resume from checkpoint
+            Command(resume={
+                "action": "continue",
+                "approved_by": approved_by or "user",
+                "decision_comment": decision_comment or "",
+            }),
             config=config,
-            # The interrupt handler in request_human_review will receive this
         )
         logger.info("langgraph_resume_completed run=%s", run_id)
     except Exception as exc:

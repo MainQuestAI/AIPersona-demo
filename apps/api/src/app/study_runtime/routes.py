@@ -1274,7 +1274,9 @@ class LoginRequest(BaseModel):
 @router.post("/auth/register")
 async def register_user(payload: RegisterRequest) -> dict[str, Any]:
     """Register a new user and optionally create a team."""
-    password_hash = hashlib.sha256(payload.password.encode()).hexdigest()
+    password_hash = hashlib.pbkdf2_hmac("sha256", payload.password.encode(), b"aipersona-salt-v1", 100_000).hex()
+    # TODO: Token is not persisted — this is a demo placeholder.
+    # For production, store in DB with expiry and validate in auth middleware.
     token = secrets.token_urlsafe(32)
 
     try:
@@ -1321,7 +1323,7 @@ async def register_user(payload: RegisterRequest) -> dict[str, Any]:
 @router.post("/auth/login")
 async def login_user(payload: LoginRequest) -> dict[str, Any]:
     """Login with email and password."""
-    password_hash = hashlib.sha256(payload.password.encode()).hexdigest()
+    password_hash = hashlib.pbkdf2_hmac("sha256", payload.password.encode(), b"aipersona-salt-v1", 100_000).hex()
     try:
         import psycopg
         from psycopg.rows import dict_row
@@ -1359,7 +1361,7 @@ async def login_user(payload: LoginRequest) -> dict[str, Any]:
 @router.post("/teams/{team_id}/invite")
 async def invite_team_member(team_id: str, payload: RegisterRequest) -> dict[str, Any]:
     """Invite a user to a team (creates account if needed)."""
-    password_hash = hashlib.sha256(payload.password.encode()).hexdigest()
+    password_hash = hashlib.pbkdf2_hmac("sha256", payload.password.encode(), b"aipersona-salt-v1", 100_000).hex()
     try:
         import psycopg
         from psycopg.rows import dict_row

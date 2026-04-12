@@ -15,8 +15,6 @@ if workflow is not None:
 
         from worker.activities import (
             advance_to_midrun_review,
-            agent_midrun_to_complete,
-            agent_plan_to_midrun,
             complete_study_run,
             mark_run_running,
         )
@@ -61,49 +59,17 @@ if workflow is not None:
             self._resume_requested = True
 
     class _AgentWorkflowBase:
-        """Agent-driven workflow: uses incremental message posting."""
+        """Agent-driven workflow — now handled by LangGraph. This is a legacy stub."""
 
         def __init__(self) -> None:
             self._resume_requested = False
             self._resume_payload: Optional[dict[str, Optional[str]]] = None
 
         async def _run_impl(self, payload: dict[str, str]) -> str:
-            workflow.logger.info("agent_workflow_started %s", payload)
-            timeout = timedelta(seconds=900)
-            retry = RetryPolicy(maximum_attempts=3, backoff_coefficient=2.0)
-
-            # Phase 1: plan → qual → midrun review
-            await workflow.execute_activity(
-                agent_plan_to_midrun, payload,
-                start_to_close_timeout=timeout, retry_policy=retry,
-            )
-
-            # Wait for user to approve midrun
-            try:
-                await workflow.wait_condition(
-                    lambda: self._resume_requested,
-                    timeout=timedelta(days=7),
-                    timeout_summary="agent-midrun-approval",
-                )
-            except asyncio.TimeoutError as exc:
-                raise RuntimeError("Agent midrun approval timed out") from exc
-
-            if self._resume_payload is None:
-                raise RuntimeError("Resume payload is missing")
-
-            # Phase 2: scoring → recommendation → complete
-            completion_payload = {
-                **payload,
-                "approved_by": self._resume_payload.get("approved_by"),
-                "decision_comment": self._resume_payload.get("decision_comment"),
-            }
-            await workflow.execute_activity(
-                agent_midrun_to_complete, completion_payload,
-                start_to_close_timeout=timeout, retry_policy=retry,
-            )
-
-            workflow.logger.info("agent_workflow_completed %s", completion_payload)
-            return "agent-workflow-completed"
+            # Agent workflows are now handled by LangGraph (see worker.graph).
+            # This Temporal workflow class is kept only for backward compatibility.
+            workflow.logger.info("agent_workflow_stub %s (use LangGraph instead)", payload)
+            return "agent-workflow-stub-completed"
 
         async def _resume_impl(self, payload: dict[str, Optional[str]]) -> None:
             self._resume_payload = payload

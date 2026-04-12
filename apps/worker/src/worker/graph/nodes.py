@@ -73,8 +73,8 @@ def plan_research(state: ResearchState) -> dict[str, Any]:
     stimuli = _load_selected_stimuli(context)
     bq = context["business_question"]
 
-    # Build interview pair queue: all combinations
-    pairs = [(ti, si) for ti, si in cartesian_product(range(len(twins)), range(len(stimuli)))]
+    # Build interview pair queue: all combinations (list-of-lists for JSON serialization)
+    pairs = [[ti, si] for ti, si in cartesian_product(range(len(twins)), range(len(stimuli)))]
     total_idi = len(pairs)
     est_minutes = max(1, math.ceil(total_idi * 5 * 12 / 60))
 
