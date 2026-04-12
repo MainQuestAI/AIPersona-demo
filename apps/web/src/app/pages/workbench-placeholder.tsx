@@ -11,6 +11,7 @@ import {
   getReportDownloadUrl,
   listStudies,
   resumeRun,
+  startAgent,
   startRun,
   submitPlanForApproval,
   type SeedAssetPack,
@@ -365,13 +366,18 @@ export function WorkbenchPlaceholder() {
         id: bundle.study.id,
         businessQuestion: bundle.study.business_question,
       });
-      // Show brief transition before navigating
+      // Start agent conversation
+      try {
+        await startAgent(bundle.study.id);
+      } catch {
+        // Agent start failure is non-blocking — workbench will fallback to artifact events
+      }
       setActionState({
         status: 'success',
-        message: '研究计划已生成，正在进入研究工作台...',
+        message: '研究已创建，AI 助手正在启动...',
       });
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      navigate(`/workbench/${bundle.study.id}?playback=1`);
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      navigate(`/studies/${bundle.study.id}/workbench`);
     } catch (error) {
       setActionState({
         status: 'error',

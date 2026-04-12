@@ -11,7 +11,7 @@ import { ToastContainer } from './toast-container';
 function getRouteMeta(pathname: string) {
   if (pathname.startsWith('/studies/')) {
     return {
-      label: 'Study Detail',
+      label: '研究详情',
     };
   }
   const normalized = pathname === '/' ? '/dashboard' : pathname;
@@ -76,7 +76,7 @@ export function AppShell({ children }: AppShellProps) {
           <header className="flex-none border-b border-line bg-bg/80 backdrop-blur-xl z-20">
             <div className="flex items-center justify-between gap-4 px-6 py-3 sm:px-8">
               <div className="flex items-center gap-3">
-                <div className="eyebrow text-tertiary">AI Consumer</div>
+                <div className="eyebrow text-tertiary">AIpersona</div>
                 <h1 className="text-lg font-semibold tracking-[-0.02em] text-text">
                   {routeMeta.label}
                 </h1>

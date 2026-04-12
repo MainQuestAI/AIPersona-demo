@@ -11,6 +11,7 @@ import {
 } from '@/app/services/studyRuntime';
 import { useWorkbenchUiStore } from '@/app/store/ui-store';
 import {
+  buildConversationEventsForProjection,
   buildExecutiveSummaryForProjection,
   buildPromptSuggestions,
   buildSetupBarData,
@@ -24,6 +25,7 @@ import { TrustDrawer } from '@/features/evidence/components/trust-drawer';
 import { TwinProvenanceDrawer } from '@/features/evidence/components/twin-provenance-drawer';
 import { ResultPanel } from '@/features/results/components/result-panel';
 import { AgentConversation } from '../components/agent-conversation';
+import { ConversationThread } from '../components/conversation-thread';
 import { PromptComposer } from '../components/prompt-composer';
 
 export function WorkbenchPage({
@@ -46,6 +48,7 @@ export function WorkbenchPage({
 
   const studyId = projection.study.id;
   const scenario = useMemo(() => getPitchScenarioBundle(projection), [projection]);
+  const fallbackEvents = useMemo(() => buildConversationEventsForProjection(projection), [projection]);
   const promptSuggestions = useMemo(() => buildPromptSuggestions(projection), [projection]);
   const setupBarData = useMemo(() => buildSetupBarData(projection), [projection]);
   const executiveSummary = useMemo(() => buildExecutiveSummaryForProjection(projection), [projection]);
@@ -209,11 +212,18 @@ export function WorkbenchPage({
         {/* Center: Agent Conversation + Composer */}
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex-1 min-h-0 overflow-y-auto pr-1">
-            <AgentConversation
-              messages={messages}
-              sending={sending}
-              onAction={handleAction}
-            />
+            {messages.length > 0 ? (
+              <AgentConversation
+                messages={messages}
+                sending={sending}
+                onAction={handleAction}
+              />
+            ) : (
+              <ConversationThread
+                events={fallbackEvents}
+                onCardAction={(action) => onCardAction?.(action)}
+              />
+            )}
           </div>
           <div className="flex-none pt-3">
             <div className="mb-2 lg:hidden">

@@ -91,17 +91,17 @@ export const APP_ROUTES: AppRouteDefinition[] = [
 export const STUDY_DETAIL_VIEWS: StudyDetailViewDefinition[] = [
   {
     key: 'workbench',
-    label: 'Workbench',
+    label: '研究工作台',
     description: '计划、审批、执行与聊天主舞台。',
   },
   {
     key: 'compare',
-    label: 'Compare',
+    label: '概念对比',
     description: '解释排序、差异与最终推荐理由。',
   },
   {
     key: 'twins',
-    label: 'Twins',
+    label: '孪生溯源',
     description: '查看 Twin 与 Stimulus 的来源和版本说明。',
   },
 ];

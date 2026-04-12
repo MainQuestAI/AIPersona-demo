@@ -91,10 +91,10 @@ export function CalibrationCenterPage() {
 
       <section className="grid gap-4 md:grid-cols-4">
         {[
-          ['Benchmark Packs', state.benchmarkPacks.length],
-          ['Calibration Runs', state.calibrationRuns.length],
-          ['Confidence Snapshots', state.confidenceSnapshots.length],
-          ['Drift Alerts', state.driftAlerts.length],
+          ['基准包', state.benchmarkPacks.length],
+          ['校准运行', state.calibrationRuns.length],
+          ['置信度快照', state.confidenceSnapshots.length],
+          ['漂移预警', state.driftAlerts.length],
         ].map(([label, value]) => (
           <div key={String(label)} className="rounded-panel border border-line bg-panel p-5 shadow-panel">
             <div className="eyebrow text-muted">{label}</div>

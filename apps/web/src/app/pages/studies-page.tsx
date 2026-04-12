@@ -121,7 +121,7 @@ export function StudiesPage() {
                 </div>
               </div>
               <div className="rounded-btn border border-accent/30 bg-accentSoft px-3 py-1 text-[0.7rem] font-semibold text-accent">
-                {study.latest_plan_version_no ? `Plan v${study.latest_plan_version_no}` : 'Plan 未生成'}
+                {study.latest_plan_version_no ? `计划 v${study.latest_plan_version_no}` : '计划未生成'}
               </div>
             </div>
           </Link>

@@ -22,7 +22,7 @@ export function GlobalRail() {
           </div>
           {!railCollapsed ? (
             <div className="min-w-0">
-              <div className="eyebrow text-muted">AI Consumer</div>
+              <div className="eyebrow text-muted">AIpersona</div>
               <div className="text-lg font-semibold tracking-[-0.02em] text-text">
                 研究工作台
               </div>
@@ -64,14 +64,9 @@ export function GlobalRail() {
             >
               <Icon className="h-5 w-5 shrink-0" />
               {!railCollapsed ? (
-                <div className="min-w-0">
-                  <div className="text-sm font-medium tracking-wide">
-                    {route.label}
-                  </div>
-                  <div className="eyebrow text-muted">
-                    {route.railLabel}
-                  </div>
-                </div>
+                <span className="text-sm font-medium tracking-wide">
+                  {route.label}
+                </span>
               ) : null}
             </NavLink>
           );

@@ -99,10 +99,10 @@ export function DashboardPage() {
 
       <section className="grid gap-4 md:grid-cols-4">
         {[
-          ['Studies', String(state.studies.length), '研究项目'],
-          ['Consumer Twins', String(state.twins.length), '可用孪生'],
-          ['Stimulus Library', String(state.stimuli.length), '刺激物资产'],
-          ['Ingestion Jobs', String(state.jobs.length), '导入任务'],
+          ['研究项目', String(state.studies.length), '已创建'],
+          ['数字孪生', String(state.twins.length), '可用版本'],
+          ['刺激物', String(state.stimuli.length), '概念资产'],
+          ['导入任务', String(state.jobs.length), '数据作业'],
         ].map(([label, value, detail]) => (
           <div key={label} className="rounded-panel border border-line bg-panel p-5 shadow-panel">
             <div className="eyebrow text-muted">{label}</div>
@@ -125,7 +125,7 @@ export function DashboardPage() {
               </div>
             </div>
             <Link to={buildStudyRoute('/workbench', latestStudy.id)} className="btn-accent">
-              进入 Study Detail
+              进入研究详情
             </Link>
           </div>
         </section>
