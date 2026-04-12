@@ -498,6 +498,29 @@ export function ComparePlaceholder() {
         ))}
       </section>
 
+      {/* ---- Export all ---- */}
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => {
+            const header = '概念,综合评分,置信度,置信等级';
+            const rows = cards.map((c) =>
+              [c.ranking.label, c.ranking.score, c.ranking.confidenceLabel, c.ranking.confidenceLevel].join(',')
+            );
+            const csv = [header, ...rows].join('\n');
+            const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = '全部概念对比数据.csv'; a.click();
+            URL.revokeObjectURL(url);
+          }}
+          className="btn-secondary-sm"
+        >
+          <Download className="h-3.5 w-3.5" />
+          导出全部对比数据
+        </button>
+      </div>
+
       {/* ---- Bottom: recommended action ---- */}
       <motion.section
         initial={{ opacity: 0, y: 16 }}

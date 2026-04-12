@@ -84,7 +84,7 @@ export const appRoutes: RouteObject[] = [
         element: <ConsumerTwinsPage />,
       },
       {
-        path: 'persona/:profileId/chat',
+        path: 'persona/:twinId/chat',
         element: <PersonaChatPage />,
       },
       {

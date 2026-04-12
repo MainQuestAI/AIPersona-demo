@@ -29,7 +29,7 @@ function PersonaAvatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md'
 
 export function PersonaChatPage() {
   const navigate = useNavigate();
-  const { profileId = '' } = useParams();
+  const { twinId: profileId = '' } = useParams();
 
   const [twin, setTwin] = useState<ConsumerTwinRecord | null>(null);
   const [loading, setLoading] = useState(true);

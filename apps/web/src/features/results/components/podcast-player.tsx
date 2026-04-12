@@ -30,8 +30,8 @@ export function PodcastPlayer({ studyId }: { studyId: string }) {
           <Radio className="h-5 w-5" />
         </div>
         <div>
-          <div className="text-sm font-medium text-text">Insight Radio</div>
-          <div className="text-[0.65rem] text-muted">AI 将研究发现转化为播客脚本</div>
+          <div className="text-sm font-medium text-text">研究速读</div>
+          <div className="text-[0.65rem] text-muted">AI 将研究发现转化为可读摘要</div>
         </div>
       </button>
     );
@@ -41,7 +41,7 @@ export function PodcastPlayer({ studyId }: { studyId: string }) {
     return (
       <div className="flex items-center gap-3 rounded-panel border border-accent/20 bg-accent/5 p-4">
         <Loader2 className="h-5 w-5 animate-spin text-accent" />
-        <div className="text-sm text-muted">正在生成播客脚本...</div>
+        <div className="text-sm text-muted">正在生成研究速读...</div>
       </div>
     );
   }
@@ -49,7 +49,7 @@ export function PodcastPlayer({ studyId }: { studyId: string }) {
   if (state === 'error') {
     return (
       <div className="rounded-panel border border-danger/30 bg-panel p-4">
-        <div className="text-sm text-danger">播客生成失败</div>
+        <div className="text-sm text-danger">研究速读生成失败</div>
         <button type="button" onClick={() => void handleGenerate()} className="mt-2 text-[0.65rem] text-accent hover:underline">
           重试
         </button>
@@ -65,9 +65,9 @@ export function PodcastPlayer({ studyId }: { studyId: string }) {
           <Mic className="h-5 w-5" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium text-text">Insight Radio</div>
+          <div className="text-sm font-medium text-text">研究速读</div>
           <div className="text-[0.65rem] text-muted">
-            预计 {podcast?.duration_estimate ?? '3 分钟'} · AI 生成播客脚本
+            预计 {podcast?.duration_estimate ?? '3 分钟'} · AI 生成研究速读
           </div>
         </div>
         <button

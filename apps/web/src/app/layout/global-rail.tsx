@@ -1,7 +1,60 @@
-import { ChevronLeft, ChevronRight, ScanEye, X } from 'lucide-react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { ChevronLeft, ChevronRight, LogIn, LogOut, ScanEye, User, X } from 'lucide-react';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { APP_ROUTES } from '@/types/route';
 import { useShellUiStore } from '../providers';
+
+function UserStatusArea({ collapsed }: { collapsed: boolean }) {
+  const navigate = useNavigate();
+  let user: { display_name?: string; email?: string } | null = null;
+  try {
+    const raw = localStorage.getItem('aipersona_user');
+    if (raw) user = JSON.parse(raw);
+  } catch { /* ignore */ }
+
+  if (!user || !user.display_name) {
+    return (
+      <button
+        type="button"
+        onClick={() => navigate('/login')}
+        className="flex items-center gap-3 rounded-card border border-transparent px-3 py-3 text-muted transition hover:border-line hover:bg-panel hover:text-text"
+        title="登录"
+      >
+        <LogIn className="h-5 w-5 shrink-0" />
+        {!collapsed ? <span className="text-sm font-medium">登录</span> : null}
+      </button>
+    );
+  }
+
+  const initial = (user.display_name || '?')[0].toUpperCase();
+  return (
+    <div className="flex items-center gap-3 rounded-card px-3 py-3">
+      <div className="h-8 w-8 shrink-0 rounded-full bg-accent/20 flex items-center justify-center text-xs font-bold text-accent">
+        {initial}
+      </div>
+      {!collapsed ? (
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium text-text truncate">{user.display_name}</div>
+          <div className="text-[0.6rem] text-tertiary truncate">{user.email}</div>
+        </div>
+      ) : null}
+      {!collapsed ? (
+        <button
+          type="button"
+          onClick={() => {
+            localStorage.removeItem('aipersona_token');
+            localStorage.removeItem('aipersona_user');
+            localStorage.removeItem('aipersona_teams');
+            navigate('/login');
+          }}
+          className="text-muted hover:text-danger transition"
+          title="退出登录"
+        >
+          <LogOut className="h-4 w-4" />
+        </button>
+      ) : null}
+    </div>
+  );
+}
 
 export function GlobalRail() {
   const railCollapsed = useShellUiStore((state) => state.railCollapsed);
@@ -83,6 +136,7 @@ export function GlobalRail() {
                   [
                     'group flex items-center gap-3 rounded-card border px-3 py-3 transition-all duration-200',
                     (route.path === '/studies' && location.pathname.startsWith('/studies'))
+                      || (route.path === '/consumer-twins' && location.pathname.startsWith('/persona/'))
                       || isActive
                       ? 'border-accent/35 bg-accentSoft text-text'
                       : 'border-transparent bg-transparent text-muted hover:border-line hover:bg-panel hover:text-text',
@@ -106,6 +160,10 @@ export function GlobalRail() {
             );
           })}
         </nav>
+
+        <div className="mt-auto border-t border-line pt-3">
+          <UserStatusArea collapsed={railCollapsed && !mobileRailOpen} />
+        </div>
       </aside>
     </>
   );

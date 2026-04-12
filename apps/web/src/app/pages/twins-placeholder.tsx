@@ -10,7 +10,6 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { useWorkbenchUiStore } from '../store/ui-store';
 
 import type { TwinProfile } from '@/types/demo';
 
@@ -170,11 +169,6 @@ export function TwinsPlaceholder() {
   const [searchParams] = useSearchParams();
   const studyId = params.studyId ?? searchParams.get('studyId') ?? '';
   const [state, setState] = useState<LoaderState>({ status: 'idle' });
-  const showToast = useWorkbenchUiStore((s) => s.showToast);
-
-  function handleTwinAction(action: string) {
-    showToast(action + ' — 功能开发中');
-  }
 
   useEffect(() => {
     if (!studyId) {

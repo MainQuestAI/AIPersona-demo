@@ -17,6 +17,7 @@ import {
 } from '../services/studyRuntime';
 import { rememberLatestStudySession } from '../services/studySession';
 import { buildStudyRoute, translateStatus } from '../services/studyRuntimeViews';
+import { TwinSelectorModal } from '@/features/workbench/components/twin-selector-modal';
 
 type State =
   | { status: 'loading' }
@@ -33,6 +34,7 @@ export function DashboardPage() {
   const navigate = useNavigate();
   const [state, setState] = useState<State>({ status: 'loading' });
   const [creating, setCreating] = useState(false);
+  const [selectorOpen, setSelectorOpen] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -58,10 +60,11 @@ export function DashboardPage() {
     return () => controller.abort();
   }, []);
 
-  async function handleQuickCreate() {
+  async function handleCreateWithTwins(twinVersionIds: string[]) {
+    setSelectorOpen(false);
     setCreating(true);
     try {
-      const bundle = await createDemoStudy();
+      const bundle = await createDemoStudy(undefined, undefined, { twinVersionIds });
       rememberLatestStudySession({
         id: bundle.study.id,
         businessQuestion: bundle.study.business_question,
@@ -134,7 +137,7 @@ export function DashboardPage() {
             ) : null}
             <button
               type="button"
-              onClick={() => void handleQuickCreate()}
+              onClick={() => setSelectorOpen(true)}
               disabled={creating}
               className="btn-secondary"
             >
@@ -240,6 +243,12 @@ export function DashboardPage() {
           );
         })}
       </motion.section>
+
+      <TwinSelectorModal
+        open={selectorOpen}
+        onClose={() => setSelectorOpen(false)}
+        onConfirm={(ids) => void handleCreateWithTwins(ids)}
+      />
     </div>
   );
 }

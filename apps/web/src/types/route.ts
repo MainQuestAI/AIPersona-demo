@@ -1,9 +1,11 @@
 import type { LucideIcon } from 'lucide-react';
 import {
+  BookOpen,
   FlaskConical,
   LayoutDashboard,
   LibraryBig,
   ScanSearch,
+  Shield,
   UsersRound,
 } from 'lucide-react';
 
@@ -11,13 +13,17 @@ export type AppRouteKey =
   | 'dashboard'
   | 'studies'
   | 'consumer-twins'
-  | 'stimulus-library';
+  | 'stimulus-library'
+  | 'sage'
+  | 'calibration-center';
 
 export type AppRoutePath =
   | '/dashboard'
   | '/studies'
   | '/consumer-twins'
-  | '/stimulus-library';
+  | '/stimulus-library'
+  | '/sage'
+  | '/calibration-center';
 
 export type AppRouteDefinition = {
   key: AppRouteKey;
@@ -73,6 +79,24 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     tag: '资产',
     description: '导入、查看并管理可进入研究执行的刺激物资产。',
     icon: LibraryBig,
+  },
+  {
+    key: 'sage',
+    path: '/sage',
+    label: 'AI Sage',
+    railLabel: 'Sage',
+    tag: 'AI',
+    description: '基于研究知识库的专家顾问，提供消费者洞察和战略建议。',
+    icon: BookOpen,
+  },
+  {
+    key: 'calibration-center',
+    path: '/calibration-center',
+    label: '校准中心',
+    railLabel: '校准',
+    tag: '运维',
+    description: '基准包管理、校准运行、置信度快照和漂移预警。',
+    icon: Shield,
   },
 ];
 

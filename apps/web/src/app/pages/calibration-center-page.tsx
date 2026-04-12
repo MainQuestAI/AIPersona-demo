@@ -80,12 +80,17 @@ export function CalibrationCenterPage() {
   return (
     <div className="space-y-6">
       <section className="rounded-panel border border-line bg-panel p-6 shadow-panel">
-        <div className="eyebrow text-accent">校准中心</div>
+        <div className="flex items-center gap-3">
+          <div className="eyebrow text-accent">校准中心</div>
+          <span className="rounded-btn bg-warning/10 border border-warning/30 px-2 py-0.5 text-[0.6rem] font-medium text-warning">
+            即将上线
+          </span>
+        </div>
         <h2 className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-text">
           校准中心
         </h2>
         <p className="mt-2 text-sm leading-7 text-muted">
-          基准包管理、校准运行、置信度快照和漂移预警。此功能即将在下一版本上线。
+          基准包管理、校准运行、置信度快照和漂移预警。此功能正在开发中，预计下一版本上线。
         </p>
       </section>
 
@@ -98,7 +103,7 @@ export function CalibrationCenterPage() {
         ].map(([label, value]) => (
           <div key={String(label)} className="rounded-panel border border-line bg-panel p-5 shadow-panel">
             <div className="eyebrow text-muted">{label}</div>
-            <div className="mt-3 text-3xl font-semibold tracking-tight text-text">{String(value)}</div>
+            <div className="mt-3 text-3xl font-semibold tracking-tight text-tertiary">--</div>
           </div>
         ))}
       </section>
