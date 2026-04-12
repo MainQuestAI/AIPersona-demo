@@ -72,7 +72,7 @@ describe('ResultPanel', () => {
     );
 
     expect(html).toContain('研究执行中');
-    expect(html).toContain('当前正在生成定性与定量结果');
+    expect(html).toContain('准备中');
     expect(html).not.toContain('研究结论');
   });
 });

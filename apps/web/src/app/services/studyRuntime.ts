@@ -34,6 +34,8 @@ export type PlanVersionSummary = {
 export type RunStepSummary = {
   step_type?: string | null;
   status?: string | null;
+  started_at?: string | null;
+  ended_at?: string | null;
 };
 
 export type RunSummary = {
@@ -212,6 +214,28 @@ export type DriftAlert = {
   label?: string | null;
 };
 
+export type StudyMemoryRecord = {
+  id: string;
+  study_id: string;
+  memory_type: 'theme' | 'preference' | 'insight' | 'brand_positioning' | 'segment_finding';
+  key: string;
+  value: string;
+  confidence?: number | null;
+  extracted_at: string;
+  study_question?: string | null;
+};
+
+export type ApprovalGateSummary = {
+  id: string;
+  scope_type?: string | null;
+  approval_type?: string | null;
+  status?: string | null;
+  approved_by?: string | null;
+  decision_comment?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
 export type WorkbenchProjection = {
   study: StudyBundleStudy;
   plan: PlanPlanSnapshot;
@@ -219,6 +243,7 @@ export type WorkbenchProjection = {
   current_run: RunSummary | null;
   recent_runs: RunSummary[];
   artifacts?: ArtifactSummary[];
+  approval_gates?: ApprovalGateSummary[];
   twins?: ConsumerTwinRecord[];
   stimuli?: StimulusRecord[];
   cost_summary?: CostSummary;
@@ -377,6 +402,38 @@ export async function listDriftAlerts(
   options: { signal?: AbortSignal } = {},
 ): Promise<DriftAlert[]> {
   return requestJson<DriftAlert[]>('/drift-alerts', { signal: options.signal });
+}
+
+export async function listAllMemories(
+  options: { signal?: AbortSignal } = {},
+): Promise<StudyMemoryRecord[]> {
+  return requestJson<StudyMemoryRecord[]>('/memories', { signal: options.signal });
+}
+
+export async function listStudyMemories(
+  studyId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<StudyMemoryRecord[]> {
+  return requestJson<StudyMemoryRecord[]>(
+    `/studies/${encodeURIComponent(studyId)}/memories`,
+    { signal: options.signal },
+  );
+}
+
+export type PodcastResult = {
+  study_id: string;
+  script: string;
+  duration_estimate: string;
+  format: string;
+};
+
+export async function generatePodcast(
+  studyId: string,
+): Promise<PodcastResult> {
+  return requestJson<PodcastResult>(
+    `/studies/${encodeURIComponent(studyId)}/podcast`,
+    { method: 'POST' },
+  );
 }
 
 export async function createDemoStudy(
@@ -541,9 +598,61 @@ export async function postAgentReply(
 
 export async function startAgent(
   studyId: string,
-): Promise<{ status: string; run_id: string }> {
-  return requestJson<{ status: string; run_id: string }>(
+): Promise<{ status: string; plan_version_id?: string; run_id?: string }> {
+  return requestJson<{ status: string; plan_version_id?: string; run_id?: string }>(
     `/studies/${encodeURIComponent(studyId)}/agent/start`,
     { method: 'POST' },
   );
+}
+
+export type GeneratePersonaResult = {
+  target_audience_id: string;
+  persona_profile_id: string;
+  consumer_twin_id: string;
+  twin_version_id: string;
+  name: string;
+  audience_label: string;
+  profile: Record<string, unknown>;
+};
+
+export async function generatePersona(
+  text: string,
+  audienceLabel: string,
+): Promise<GeneratePersonaResult> {
+  return requestJson<GeneratePersonaResult>('/persona-profiles/generate', {
+    method: 'POST',
+    body: JSON.stringify({ text, audience_label: audienceLabel }),
+  });
+}
+
+export async function chatWithPersona(
+  profileId: string,
+  message: string,
+  history: Array<{ role: string; content: string }> = [],
+): Promise<{ reply: string }> {
+  return requestJson<{ reply: string }>(
+    `/persona-profiles/${encodeURIComponent(profileId)}/chat`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ message, history }),
+    },
+  );
+}
+
+export async function uploadPersonaPDF(
+  file: File,
+  audienceLabel: string,
+): Promise<GeneratePersonaResult> {
+  const apiBase = getApiBase();
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('audience_label', audienceLabel);
+  const response = await fetch(`${apiBase}/persona-profiles/upload`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!response.ok) {
+    throw new Error(formatErrorMessage(response));
+  }
+  return (await response.json()) as GeneratePersonaResult;
 }

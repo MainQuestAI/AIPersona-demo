@@ -666,6 +666,23 @@ class PostgresStudyRuntimeRepository:
                 rows = cursor.fetchall()
         return [self._serialize_record(row) for row in rows]
 
+    def get_persona_profile(self, profile_id: str) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                      pp.*,
+                      ta.label AS target_audience_label
+                    FROM persona_profile pp
+                    JOIN target_audience ta ON ta.id = pp.target_audience_id
+                    WHERE pp.id = %s
+                    """,
+                    (profile_id,),
+                )
+                row = cursor.fetchone()
+        return self._serialize_record(row) if row else None
+
     def list_twin_versions(self) -> list[dict[str, Any]]:
         with self._connect() as connection:
             with connection.cursor() as cursor:
@@ -929,3 +946,180 @@ class PostgresStudyRuntimeRepository:
                 row = cursor.fetchone()
             connection.commit()
         return self._serialize_record(row)
+
+    def create_persona_chain(
+        self,
+        audience_label: str,
+        profile_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Create target_audience → persona_profile → consumer_twin → twin_version in one transaction."""
+        from psycopg.types.json import Json as PgJson
+
+        name = profile_data.get("name", audience_label)
+        profile_json = {
+            "name": name,
+            "audience_label": audience_label,
+            "age_range": profile_data.get("age_range", "未知"),
+            "built_from": "访谈文本 AI 提取",
+            "research_readiness": ["概念筛选", "命名测试"],
+            "version_notes": f"基于 {audience_label} 访谈文本自动生成。",
+            "system_prompt": profile_data.get("system_prompt", f"你是一位{audience_label}消费者。"),
+            "demographics": profile_data.get("demographics", ""),
+            "behavioral": profile_data.get("behavioral", ""),
+            "psychological": profile_data.get("psychological", ""),
+            "needs_pain_points": profile_data.get("needs_pain_points", ""),
+        }
+
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                # 1. target_audience
+                cursor.execute(
+                    """
+                    INSERT INTO target_audience (label, category, description)
+                    VALUES (%s, %s, %s)
+                    RETURNING id
+                    """,
+                    (audience_label, "User Generated", profile_data.get("demographics", "")),
+                )
+                ta_id = str(cursor.fetchone()["id"])
+
+                # 2. persona_profile
+                cursor.execute(
+                    """
+                    INSERT INTO persona_profile (target_audience_id, label, profile_json)
+                    VALUES (%s, %s, %s)
+                    RETURNING id
+                    """,
+                    (ta_id, f"{name}画像", PgJson(profile_json)),
+                )
+                pp_id = str(cursor.fetchone()["id"])
+
+                # 3. consumer_twin
+                cursor.execute(
+                    """
+                    INSERT INTO consumer_twin (target_audience_id, persona_profile_id, business_purpose, applicable_scenarios, owner)
+                    VALUES (%s, %s, %s, %s, %s)
+                    RETURNING id
+                    """,
+                    (ta_id, pp_id, f"代表{audience_label}评估消费者研究。", ["concept_screening", "naming_test"], "User"),
+                )
+                ct_id = str(cursor.fetchone()["id"])
+
+                # 4. twin_version
+                cursor.execute(
+                    """
+                    INSERT INTO twin_version (consumer_twin_id, version_no, persona_profile_snapshot_json, source_lineage, benchmark_status)
+                    VALUES (%s, 1, %s, %s, 'draft')
+                    RETURNING id
+                    """,
+                    (
+                        ct_id,
+                        PgJson(profile_json),
+                        PgJson({"source": "interview_text_extraction", "notes": f"AI extracted from {audience_label} interview text"}),
+                    ),
+                )
+                tv_id = str(cursor.fetchone()["id"])
+
+            connection.commit()
+
+        return {
+            "target_audience_id": ta_id,
+            "persona_profile_id": pp_id,
+            "consumer_twin_id": ct_id,
+            "twin_version_id": tv_id,
+            "name": name,
+            "audience_label": audience_label,
+            "profile": profile_json,
+        }
+
+    def create_plan_version_from_edit(
+        self,
+        study_id: str,
+        base_version: dict[str, Any],
+        twin_version_ids: list[str],
+        stimulus_ids: list[str],
+    ) -> dict[str, Any]:
+        """Create a new study_plan_version based on an edited configuration."""
+        from psycopg.types.json import Json as PgJson
+
+        plan_id = str(base_version.get("study_plan_id", ""))
+        base_version_no = int(base_version.get("version_no", 0))
+        new_version_no = base_version_no + 1
+
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO study_plan_version (
+                      study_plan_id, version_no, approval_status,
+                      twin_version_ids, stimulus_ids,
+                      qual_config_json, quant_config_json,
+                      generated_by, approval_required
+                    )
+                    VALUES (%s, %s, 'draft', %s, %s, %s, %s, %s, true)
+                    RETURNING *
+                    """,
+                    (
+                        plan_id,
+                        new_version_no,
+                        twin_version_ids,
+                        stimulus_ids,
+                        PgJson(base_version.get("qual_config_json", {})),
+                        PgJson(base_version.get("quant_config_json", {})),
+                        "user_edit",
+                    ),
+                )
+                row = cursor.fetchone()
+            connection.commit()
+        return self._serialize_record(row)
+
+    # ------------------------------------------------------------------
+    #  Memory
+    # ------------------------------------------------------------------
+
+    def list_recent_memories(self, *, limit: int = 10) -> list[dict[str, Any]]:
+        """Return the most recent memories across all studies."""
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT * FROM study_memory
+                    WHERE superseded_by IS NULL
+                    ORDER BY extracted_at DESC
+                    LIMIT %s
+                    """,
+                    (limit,),
+                )
+                rows = cursor.fetchall()
+        return [self._serialize_record(row) for row in rows]
+
+    def list_study_memories(self, study_id: str) -> list[dict[str, Any]]:
+        """Return memories for a specific study."""
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT * FROM study_memory
+                    WHERE study_id = %s
+                    ORDER BY extracted_at DESC
+                    """,
+                    (study_id,),
+                )
+                rows = cursor.fetchall()
+        return [self._serialize_record(row) for row in rows]
+
+    def list_all_memories(self) -> list[dict[str, Any]]:
+        """Return all active memories across studies."""
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT sm.*, s.business_question AS study_question
+                    FROM study_memory sm
+                    JOIN study s ON s.id = sm.study_id
+                    WHERE sm.superseded_by IS NULL
+                    ORDER BY sm.extracted_at DESC
+                    """
+                )
+                rows = cursor.fetchall()
+        return [self._serialize_record(row) for row in rows]

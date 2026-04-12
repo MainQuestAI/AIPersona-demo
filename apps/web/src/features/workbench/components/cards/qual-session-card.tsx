@@ -1,5 +1,48 @@
 import type { QualSessionEvent } from '@/types/demo';
 
+// Deterministic hue from speaker label first char (consistent per persona type)
+function labelToHue(label: string): number {
+  const char = label.codePointAt(0) ?? 0;
+  return (char * 47) % 360;
+}
+
+function PersonaAvatar({ label }: { label: string }) {
+  const parts = label.split('·').map((s) => s.trim());
+  const personaType = parts[0] ?? label;
+  const initial = personaType.slice(0, 1);
+  const hue = labelToHue(personaType);
+
+  return (
+    <div
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
+      style={{
+        background: `hsl(${hue} 55% 18%)`,
+        border: `1px solid hsl(${hue} 55% 30%)`,
+        color: `hsl(${hue} 80% 65%)`,
+      }}
+    >
+      {initial}
+    </div>
+  );
+}
+
+function SpeakerMeta({ label }: { label: string }) {
+  const parts = label.split('·').map((s) => s.trim());
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="text-xs font-semibold text-text">{parts[0]}</span>
+      {parts.slice(1).map((tag) => (
+        <span
+          key={tag}
+          className="rounded-full border border-line bg-surfaceElevated px-2 py-0.5 text-[0.6rem] text-tertiary"
+        >
+          {tag}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function QualSessionCard({ event }: { event: QualSessionEvent }) {
   return (
     <article className="glass-panel p-5">
@@ -24,21 +67,19 @@ export function QualSessionCard({ event }: { event: QualSessionEvent }) {
           </span>
         ))}
       </div>
-      <div className="mt-4 grid gap-3">
+      <div className="mt-4 space-y-3">
         {event.excerpts.map((excerpt, excerptIdx) => (
-          <div
-            key={excerptIdx}
-            className="inner-card p-4"
-          >
-            <div className="eyebrow text-muted">
-              {excerpt.speakerLabel}
+          <div key={excerptIdx} className="inner-card p-4">
+            {/* Persona header */}
+            <div className="flex items-center gap-2.5">
+              <PersonaAvatar label={excerpt.speakerLabel} />
+              <SpeakerMeta label={excerpt.speakerLabel} />
             </div>
-            <div className="mt-2 space-y-2 text-sm leading-6">
+            {/* Quote lines */}
+            <div className="mt-3 space-y-2 border-l-2 border-accent/20 pl-3">
               {excerpt.lines.map((line, lineIdx) => (
-                <p key={lineIdx} className="text-text/90">
-                  <span className="text-tertiary">&ldquo;</span>
+                <p key={lineIdx} className="text-sm leading-6 text-text/85 italic">
                   {line}
-                  <span className="text-tertiary">&rdquo;</span>
                 </p>
               ))}
             </div>

@@ -7,7 +7,6 @@ import {
   Fingerprint,
   Loader2,
   MessageCircle,
-  Settings2,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -40,7 +39,16 @@ type LoaderState =
 /*  Twin Profile Card                                                  */
 /* ------------------------------------------------------------------ */
 
-function TwinProfileCard({ twin, onAction }: { twin: TwinProfile; onAction: (action: string) => void }) {
+function twinHue(name: string): number {
+  const char = name.codePointAt(0) ?? 0;
+  return (char * 47) % 360;
+}
+
+function TwinProfileCard({ twin }: { twin: TwinProfile }) {
+  const navigate = useNavigate();
+  const hue = twinHue(twin.name);
+  const initial = twin.name.slice(0, 1);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
@@ -56,8 +64,15 @@ function TwinProfileCard({ twin, onAction }: { twin: TwinProfile; onAction: (act
           </h3>
           <p className="mt-1 text-sm text-muted">{twin.audienceLabel}</p>
         </div>
-        <div className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-panel border border-accent/25 bg-accentSoft text-accent">
-          <Fingerprint className="h-5 w-5" />
+        <div
+          className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-full text-base font-bold"
+          style={{
+            background: `hsl(${hue} 55% 18%)`,
+            border: `1px solid hsl(${hue} 55% 30%)`,
+            color: `hsl(${hue} 80% 65%)`,
+          }}
+        >
+          {initial}
         </div>
       </div>
 
@@ -80,13 +95,9 @@ function TwinProfileCard({ twin, onAction }: { twin: TwinProfile; onAction: (act
 
       {/* Actions */}
       <div className="mt-5 flex flex-wrap gap-2 border-t border-line pt-4">
-        <button type="button" onClick={() => onAction(`与 ${twin.name} 对话`)} className="btn-accent">
+        <button type="button" onClick={() => navigate(`/persona/${encodeURIComponent(twin.id)}/chat`)} className="btn-accent">
           <MessageCircle className="h-3.5 w-3.5" />
           与孪生对话
-        </button>
-        <button type="button" onClick={() => onAction(`配置 ${twin.name}`)} className="btn-secondary-sm">
-          <Settings2 className="h-3.5 w-3.5" />
-          配置参数
         </button>
       </div>
     </motion.div>
@@ -129,11 +140,11 @@ function EmptyState() {
             <button
               type="button"
               onClick={() => {
-                navigate('/workbench');
+                navigate('/studies');
               }}
               className="rounded-panel border btn-accent"
             >
-              回到工作台
+              回到研究列表
             </button>
             {latestStudy ? (
               <Link
@@ -353,7 +364,7 @@ export function TwinsPlaceholder() {
       {twinProfiles.length > 0 ? (
         <section className="grid gap-5 md:grid-cols-2">
           {twinProfiles.map((twin) => (
-            <TwinProfileCard key={twin.id} twin={twin} onAction={handleTwinAction} />
+            <TwinProfileCard key={twin.id} twin={twin} />
           ))}
         </section>
       ) : registry.cards.length > 0 ? (

@@ -8,8 +8,6 @@ import {
   buildPromptSuggestions,
   buildStudySessionBoard,
   getPitchScenarioBundle,
-  getSurfaceCtaLabels,
-  selectScenarioIdForProjection,
 } from './workbenchRuntimeBridge';
 
 const baseProjection: WorkbenchProjection = {
@@ -53,59 +51,6 @@ const baseProjection: WorkbenchProjection = {
 };
 
 describe('workbenchRuntimeBridge', () => {
-  it('maps runtime statuses to the correct pitch scenario', () => {
-    expect(selectScenarioIdForProjection(baseProjection)).toBe('completed-recommendation');
-
-    expect(
-      selectScenarioIdForProjection({
-        ...baseProjection,
-        current_run: {
-          id: 'run-1',
-          study_plan_version_id: 'version-1',
-          status: 'awaiting_midrun_approval',
-          workflow_id: 'workflow-1',
-          workflow_run_id: 'exec-1',
-          step_count: 3,
-          approval_status: 'requested',
-          steps: [],
-          created_at: '2026-04-03T10:10:00+08:00',
-          updated_at: '2026-04-03T10:20:00+08:00',
-        },
-      }),
-    ).toBe('awaiting-midrun-review');
-
-    expect(
-      selectScenarioIdForProjection({
-        ...baseProjection,
-        current_run: {
-          id: 'run-2',
-          study_plan_version_id: 'version-1',
-          status: 'failed',
-          workflow_id: 'workflow-2',
-          workflow_run_id: 'exec-2',
-          step_count: 3,
-          approval_status: 'approved',
-          steps: [],
-          created_at: '2026-04-03T10:10:00+08:00',
-          updated_at: '2026-04-03T10:20:00+08:00',
-        },
-      }),
-    ).toBe('rerun-suggested');
-  });
-
-  it('returns pitch-appropriate cta labels for each scenario surface', () => {
-    expect(getSurfaceCtaLabels('completed-recommendation')).toEqual([
-      '查看回放',
-      '打开可信度面板',
-      '查看完整对比',
-    ]);
-    expect(getSurfaceCtaLabels('awaiting-midrun-review')).toEqual([
-      '批准中途审批',
-      '查看新兴主题',
-      '暂停编辑',
-    ]);
-  });
-
   it('builds prompt suggestions from runtime state instead of static copy', () => {
     expect(
       buildPromptSuggestions({
@@ -116,7 +61,7 @@ describe('workbenchRuntimeBridge', () => {
         },
       }),
     ).toEqual([
-      '检查当前 Plan 是否覆盖 2 个目标人群',
+      '检查当前计划是否覆盖 2 个目标人群',
       '确认 3 个刺激物与 2 个数字孪生的绑定关系',
       '准备提交审批',
     ]);
@@ -517,6 +462,78 @@ describe('workbenchRuntimeBridge', () => {
     expect(scenario.conversationEvents.find((event) => event.type === 'midrun_review_card')).toMatchObject({
       decisionSummary: expect.stringContaining('当前定性阶段'),
       recommendation: expect.stringContaining('继续进入定量排序'),
+    });
+  });
+
+  it('maps replay artifact stages to ReplayData when insights.replay is present', () => {
+    const scenario = getPitchScenarioBundle({
+      ...baseProjection,
+      study: {
+        ...baseProjection.study,
+        status: 'completed',
+      },
+      current_run: {
+        id: 'run-replay',
+        study_plan_version_id: 'version-1',
+        status: 'succeeded',
+        workflow_id: 'workflow-1',
+        workflow_run_id: 'exec-1',
+        step_count: 4,
+        approval_status: 'approved',
+        steps: [],
+        created_at: '2026-04-03T10:10:00+08:00',
+        updated_at: '2026-04-03T10:20:00+08:00',
+      },
+      artifacts: [
+        {
+          id: 'artifact-rec',
+          artifact_type: 'recommendation',
+          format: 'json',
+          status: 'ready',
+          created_at: '2026-04-03T10:18:00+08:00',
+          manifest: {
+            winner: '清泉+',
+            confidence_label: '82 / 高',
+            next_action: '进入消费者验证',
+            supporting_text: '清泉+ 更容易建立安全感。',
+          },
+        },
+      ],
+      // insights.replay simulates what projections.py now provides
+      insights: {
+        replay: {
+          title: 'concept_screening 研究回放',
+          stages: [
+            {
+              id: 'plan',
+              label: '计划锁定',
+              inputs: ['哪一个概念更值得推进？'],
+              outputs: ['2 个孪生版本', '3 个刺激物'],
+              decisions: ['进入 AI 定性访谈'],
+            },
+            {
+              id: 'qual',
+              label: '定性访谈',
+              inputs: ['哪一个概念更值得推进？'],
+              outputs: ['3 个核心主题'],
+              decisions: ['进入定量排序'],
+            },
+          ],
+        },
+      },
+    } as any);
+
+    expect(scenario.replay.title).toBe('concept_screening 研究回放');
+    expect(scenario.replay.stages).toHaveLength(2);
+    expect(scenario.replay.stages[0]).toMatchObject({
+      id: 'plan',
+      label: '计划锁定',
+      inputs: ['哪一个概念更值得推进？'],
+    });
+    expect(scenario.replay.stages[1]).toMatchObject({
+      id: 'qual',
+      label: '定性访谈',
+      outputs: ['3 个核心主题'],
     });
   });
 });

@@ -10,6 +10,7 @@ import {
   type IngestionJob,
   type StimulusRecord,
 } from '../services/studyRuntime';
+import { translateStimulusType, translateStatus } from '../services/studyRuntimeViews';
 
 type State =
   | { status: 'loading' }
@@ -43,23 +44,32 @@ export function StimulusLibraryPage() {
     return () => controller.abort();
   }, []);
 
-  async function handleImport() {
-    setImporting(true);
-    try {
-      await importAsset({
-        asset_kind: 'stimulus_asset',
-        name: '新导入概念卡',
-        source_format: 'json',
-        storage_uri: 'file:///tmp/new-stimulus.json',
-        metadata: {
-          stimulus_type: 'concept',
-          description: '用于演示导入链路的概念卡。',
-        },
-      });
-      await load();
-    } finally {
-      setImporting(false);
-    }
+  function triggerFileUpload() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,.csv,.xlsx';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      setImporting(true);
+      try {
+        await importAsset({
+          asset_kind: 'stimulus_asset',
+          name: file.name.replace(/\.[^.]+$/, ''),
+          source_format: file.name.endsWith('.json') ? 'json' : file.name.endsWith('.csv') ? 'csv' : 'xlsx',
+          storage_uri: `upload://${file.name}`,
+          metadata: {
+            stimulus_type: 'concept',
+            description: `从文件 ${file.name} 导入。`,
+            original_filename: file.name,
+          },
+        });
+        await load();
+      } finally {
+        setImporting(false);
+      }
+    };
+    input.click();
   }
 
   if (state.status === 'loading') {
@@ -79,7 +89,7 @@ export function StimulusLibraryPage() {
         <div className="flex items-start gap-3">
           <AlertTriangle className="mt-0.5 h-5 w-5 text-danger" />
           <div>
-            <div className="eyebrow text-danger">Stimulus Library</div>
+            <div className="eyebrow text-danger">刺激物库</div>
             <p className="mt-2 text-sm text-muted">{state.message}</p>
           </div>
         </div>
@@ -92,15 +102,15 @@ export function StimulusLibraryPage() {
       <section className="rounded-panel border border-line bg-panel p-6 shadow-panel">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <div className="eyebrow text-accent">Stimulus Library</div>
+            <div className="eyebrow text-accent">刺激物库</div>
             <h2 className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-text">
-              资产导入与 Stimulus 对象已接上真实 API
+              刺激物资产管理
             </h2>
             <p className="mt-2 text-sm leading-7 text-muted">
-              当前导入链路已经能创建 asset manifest、ingestion job 和 stimulus 对象。这里是 M1 的正式产品入口。
+              导入、查看和管理研究中使用的概念卡、包装设计等刺激物资产。
             </p>
           </div>
-          <button type="button" onClick={() => void handleImport()} className="btn-accent" disabled={importing}>
+          <button type="button" onClick={triggerFileUpload} className="btn-accent" disabled={importing}>
             <Upload className="h-4 w-4" />
             {importing ? '正在导入...' : '导入概念资产'}
           </button>
@@ -109,13 +119,16 @@ export function StimulusLibraryPage() {
 
       <section className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
         <div className="rounded-panel border border-line bg-panel p-5 shadow-panel">
-          <div className="eyebrow text-muted">Stimuli</div>
+          <div className="eyebrow text-muted">刺激物列表</div>
           <div className="mt-4 space-y-3">
+            {state.stimuli.length === 0 ? (
+              <div className="text-sm text-tertiary py-4 text-center">暂无刺激物资产</div>
+            ) : null}
             {state.stimuli.map((stimulus) => (
               <div key={stimulus.id} className="inner-card px-4 py-3">
                 <div className="flex items-center justify-between gap-3">
                   <div className="font-medium text-text">{stimulus.name}</div>
-                  <div className="text-xs text-muted">{stimulus.stimulus_type}</div>
+                  <div className="text-xs text-muted">{translateStimulusType(stimulus.stimulus_type)}</div>
                 </div>
                 <div className="mt-1 text-sm text-muted">{stimulus.description}</div>
               </div>
@@ -124,21 +137,29 @@ export function StimulusLibraryPage() {
         </div>
         <div className="space-y-4">
           <div className="rounded-panel border border-line bg-panel p-5 shadow-panel">
-            <div className="eyebrow text-muted">Ingestion Jobs</div>
+            <div className="eyebrow text-muted">导入任务</div>
             <div className="mt-4 space-y-3">
+              {state.jobs.length === 0 ? (
+                <div className="text-sm text-tertiary py-4 text-center">暂无导入任务</div>
+              ) : null}
               {state.jobs.map((job) => (
-                <div key={job.id} className="inner-card px-4 py-3 text-sm text-muted">
-                  {job.id} · {job.status}
+                <div key={job.id} className="inner-card px-4 py-3 text-sm">
+                  <div className="text-text">导入任务 #{job.id.slice(0, 8)}</div>
+                  <div className="mt-0.5 text-muted">{translateStatus(job.status)}</div>
                 </div>
               ))}
             </div>
           </div>
           <div className="rounded-panel border border-line bg-panel p-5 shadow-panel">
-            <div className="eyebrow text-muted">Dataset Mappings</div>
+            <div className="eyebrow text-muted">数据映射</div>
             <div className="mt-4 space-y-3">
+              {state.mappings.length === 0 ? (
+                <div className="text-sm text-tertiary py-4 text-center">暂无数据映射</div>
+              ) : null}
               {state.mappings.map((mapping) => (
-                <div key={mapping.id} className="inner-card px-4 py-3 text-sm text-muted">
-                  {mapping.id} · {mapping.mapping_status}
+                <div key={mapping.id} className="inner-card px-4 py-3 text-sm">
+                  <div className="text-text">映射 #{mapping.id.slice(0, 8)}</div>
+                  <div className="mt-0.5 text-muted">{translateStatus(mapping.mapping_status)}</div>
                 </div>
               ))}
             </div>

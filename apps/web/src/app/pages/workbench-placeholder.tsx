@@ -25,7 +25,7 @@ import {
 import { WorkbenchPage } from '@/features/workbench/pages/workbench-page';
 import { useWorkbenchUiStore } from '../store/ui-store';
 import { useLatestStudySession } from '../hooks/useLatestStudySession';
-import { buildStudyRoute } from '../services/studyRuntimeViews';
+import { buildStudyRoute, translateStatus, translateStudyType } from '../services/studyRuntimeViews';
 
 type WorkbenchLoaderState =
   | { status: 'idle' | 'loading' | 'empty' }
@@ -228,7 +228,7 @@ function EmptyWorkbenchState({
                 </div>
               </div>
               <Link
-                to={`/workbench/${encodeURIComponent(latestStudy.id)}`}
+                to={`/studies/${encodeURIComponent(latestStudy.id)}/workbench`}
                 className="btn-accent"
               >
                 继续
@@ -250,11 +250,11 @@ function EmptyWorkbenchState({
                 <div className="min-w-0">
                   <div className="text-sm font-medium text-text">{item.business_question ?? item.id}</div>
                   <div className="mt-0.5 text-xs text-tertiary">
-                    {item.study_type ?? '研究'} · {item.category ?? '未分类'}
+                    {translateStudyType(item.study_type)} · {item.category ?? '未分类'}
                   </div>
                 </div>
                 <span className="shrink-0 rounded-sm2 bg-accent/10 px-2 py-0.5 text-[0.6rem] font-medium text-accent">
-                  {item.current_run_status ?? item.status ?? '待启动'}
+                  {translateStatus(item.current_run_status ?? item.status)}
                 </span>
               </Link>
             ))}

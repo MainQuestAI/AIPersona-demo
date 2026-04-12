@@ -73,8 +73,8 @@ describe('studyRuntimeViews', () => {
     const viewModel = buildCompareViewModel(projection);
 
     expect(viewModel.decision.title).toBe('等待中途审核确认');
-    expect(viewModel.reference.title).toContain('Plan v2');
-    expect(viewModel.reference.metrics).toContain('3 个 stimuli');
+    expect(viewModel.reference.title).toContain('计划 v2');
+    expect(viewModel.reference.metrics).toContain('3 个刺激物');
     expect(viewModel.comparison.metrics).toContain('3 个步骤');
     expect(viewModel.axes).toEqual([
       { label: '审批状态', reference: 'approved', comparison: 'requested' },
@@ -87,23 +87,23 @@ describe('studyRuntimeViews', () => {
     const registry = buildTwinRegistryModel(projection);
 
     expect(registry.summary).toEqual([
-      { label: 'Twin 数量', value: '2' },
-      { label: 'Stimuli 数量', value: '3' },
+      { label: '孪生数量', value: '2' },
+      { label: '刺激物数量', value: '3' },
       { label: '目标人群', value: '2' },
-      { label: 'Plan 版本', value: 'v2' },
+      { label: '计划版本', value: 'v2' },
     ]);
     expect(registry.cards).toEqual([
       {
         id: 'twin-alpha',
         title: 'Twin twin-alpha',
         detail: '绑定人群：Pregnant Women',
-        chips: ['Provenance', 'Plan v2', 'study-1'],
+        chips: ['溯源', '计划 v2'],
       },
       {
         id: 'twin-beta',
         title: 'Twin twin-beta',
         detail: '绑定人群：New Mom',
-        chips: ['Provenance', 'Plan v2', 'study-1'],
+        chips: ['溯源', '计划 v2'],
       },
     ]);
   });

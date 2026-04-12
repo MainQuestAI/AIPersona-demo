@@ -51,6 +51,8 @@ def _summarize_run(record: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]
             {
                 "step_type": step.get("step_type"),
                 "status": step.get("status"),
+                "started_at": step.get("started_at"),
+                "ended_at": step.get("ended_at"),
             }
             for step in record.get("run_steps", [])
         ],
@@ -186,6 +188,20 @@ def build_workbench_projection(
         "current_run": _summarize_run(current_run),
         "recent_runs": [_summarize_run(run) for run in study_runs[:5]],
         "artifacts": artifacts,
+        "insights": _build_insights(artifacts, study_runs),
+        "approval_gates": [
+            {
+                "id": str(gate["id"]),
+                "scope_type": gate.get("scope_type"),
+                "approval_type": gate.get("approval_type"),
+                "status": gate.get("status"),
+                "approved_by": gate.get("approved_by"),
+                "decision_comment": gate.get("decision_comment"),
+                "created_at": gate.get("created_at"),
+                "updated_at": gate.get("updated_at"),
+            }
+            for gate in bundle.get("approval_gates", [])
+        ],
         "twins": twins or [],
         "stimuli": stimuli or [],
         "cost_summary": _build_cost_summary(_summarize_plan_version(latest_plan_version), artifacts),

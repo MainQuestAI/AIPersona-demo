@@ -724,7 +724,7 @@ function buildStageCopy(
   }
 }
 
-export function selectScenarioIdForProjection(
+function selectScenarioIdForProjection(
   projection: WorkbenchProjection,
 ): DemoScenarioId {
   const phase = getRuntimePhase(projection);
@@ -737,19 +737,6 @@ export function selectScenarioIdForProjection(
   return 'completed-recommendation';
 }
 
-export function getSurfaceCtaLabels(
-  scenarioId: DemoScenarioId,
-): string[] {
-  switch (scenarioId) {
-    case 'awaiting-midrun-review':
-      return ['批准中途审批', '查看新兴主题', '暂停编辑'];
-    case 'rerun-suggested':
-      return ['查看变更', '启动重跑', '保留当前结果'];
-    case 'completed-recommendation':
-    default:
-      return ['查看回放', '打开可信度面板', '查看完整对比'];
-  }
-}
 
 export function buildSetupBarData(projection: WorkbenchProjection) {
   const scenario = getPitchScenarioBundle(projection);
@@ -775,7 +762,7 @@ export function buildPromptSuggestions(
   switch (phase) {
     case 'draft':
       return [
-        `检查当前 Plan 是否覆盖 ${targetGroupCount} 个目标人群`,
+        `检查当前计划是否覆盖 ${targetGroupCount} 个目标人群`,
         `确认 ${stimulusCount} 个刺激物与 ${twinCount} 个数字孪生的绑定关系`,
         '准备提交审批',
       ];
@@ -937,7 +924,7 @@ export function buildEvidenceChainCardsForProjection(
   ];
 }
 
-export function buildTimelineStepsForProjection(
+function buildTimelineStepsForProjection(
   projection: WorkbenchProjection,
 ): TimelineStep[] {
   const scenario = getScenarioBundle(selectScenarioIdForProjection(projection));
@@ -998,7 +985,12 @@ export function buildConversationEventsForProjection(
 export function getPitchScenarioBundle(
   projection: WorkbenchProjection,
 ): DemoScenarioBundle {
-  const scenario = buildArtifactScenarioBundle(projection as StudyDetailProjection)
-    ?? getScenarioBundle(selectScenarioIdForProjection(projection));
-  return enrichScenarioForProjection(projection, scenario);
+  const artifactBundle = buildArtifactScenarioBundle(projection as StudyDetailProjection);
+  if (artifactBundle) {
+    return enrichScenarioForProjection(projection, artifactBundle);
+  }
+  // Fallback: use mock scenario for structural completeness.
+  // This keeps the UI functional even when real artifacts haven't been generated yet.
+  const fallback = getScenarioBundle(selectScenarioIdForProjection(projection));
+  return enrichScenarioForProjection(projection, fallback);
 }

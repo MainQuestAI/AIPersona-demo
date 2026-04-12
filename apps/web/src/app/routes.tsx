@@ -12,6 +12,7 @@ import { CalibrationCenterPage } from './pages/calibration-center-page';
 import { ComparePlaceholder } from './pages/compare-placeholder';
 import { ConsumerTwinsPage } from './pages/consumer-twins-page';
 import { DashboardPage } from './pages/dashboard-page';
+import { PersonaChatPage } from './pages/persona-chat-page';
 import { StudiesPage } from './pages/studies-page';
 import { StudyDetailLayout } from './pages/study-detail-layout';
 import { StimulusLibraryPage } from './pages/stimulus-library-page';
@@ -79,6 +80,10 @@ export const appRoutes: RouteObject[] = [
       {
         path: 'consumer-twins',
         element: <ConsumerTwinsPage />,
+      },
+      {
+        path: 'persona/:profileId/chat',
+        element: <PersonaChatPage />,
       },
       {
         path: 'stimulus-library',

@@ -1,6 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
 import {
-  BarChart3,
   FlaskConical,
   LayoutDashboard,
   LibraryBig,
@@ -12,15 +11,13 @@ export type AppRouteKey =
   | 'dashboard'
   | 'studies'
   | 'consumer-twins'
-  | 'stimulus-library'
-  | 'calibration-center';
+  | 'stimulus-library';
 
 export type AppRoutePath =
   | '/dashboard'
   | '/studies'
   | '/consumer-twins'
-  | '/stimulus-library'
-  | '/calibration-center';
+  | '/stimulus-library';
 
 export type AppRouteDefinition = {
   key: AppRouteKey;
@@ -45,7 +42,7 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     key: 'dashboard',
     path: '/dashboard',
     label: '业务总览',
-    railLabel: 'Dashboard',
+    railLabel: '总览',
     tag: '总览',
     description: '查看研究项目、资产底座与运行状态的全局概览。',
     icon: LayoutDashboard,
@@ -54,7 +51,7 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     key: 'studies',
     path: '/studies',
     label: '研究项目',
-    railLabel: 'Studies',
+    railLabel: '研究',
     tag: '主线',
     description: '创建、浏览并进入 Study Detail 的正式入口。',
     icon: ScanSearch,
@@ -63,7 +60,7 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     key: 'consumer-twins',
     path: '/consumer-twins',
     label: '孪生中心',
-    railLabel: 'Twins',
+    railLabel: '孪生',
     tag: '资产',
     description: '查看 Twin 资产、版本与来源链，作为后续研究执行的稳定底座。',
     icon: UsersRound,
@@ -72,19 +69,10 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     key: 'stimulus-library',
     path: '/stimulus-library',
     label: '刺激物库',
-    railLabel: 'Library',
+    railLabel: '刺激物',
     tag: '资产',
     description: '导入、查看并管理可进入研究执行的刺激物资产。',
     icon: LibraryBig,
-  },
-  {
-    key: 'calibration-center',
-    path: '/calibration-center',
-    label: '校准中心',
-    railLabel: 'Calibration',
-    tag: '可信度',
-    description: '管理 benchmark、校准运行与 confidence 输出。',
-    icon: BarChart3,
   },
 ];
 

@@ -91,14 +91,11 @@ class StudyAgent:
         # --- Mark run as running ---
         self._mark_running()
 
-        # --- Greet ---
+        # --- Confirm start (plan was already presented in start_agent) ---
         self.post_message(
             "agent",
-            f"研究计划已就绪。\n\n"
-            f"**研究问题**：{bq}\n"
-            f"**配置**：{len(twins)} 个目标人群 × {len(stimuli)} 个刺激物\n"
-            f"**预计**：{total_calls} 次 AI 调用，约 {est_minutes} 分钟\n\n"
-            f"正在启动 AI 定性访谈...",
+            f"收到确认，正在启动 AI 定性访谈...\n\n"
+            f"共 {total_idi} 场访谈（{len(twins)} 个人群 × {len(stimuli)} 个刺激物），预计约 {est_minutes} 分钟。",
         )
 
         # --- IDI interviews (incremental) ---
@@ -323,6 +320,21 @@ class StudyAgent:
             metadata={"card_type": "recommendation", "data": recommendation},
         )
 
+        # --- Memory extraction ---
+        memory_count = self._extract_and_store_memories(
+            qual_themes=qual_themes,
+            recommendation=recommendation,
+            quant_result=quant_result,
+            bq=bq,
+        )
+        if memory_count > 0:
+            self.post_message(
+                "agent",
+                f"已自动提取 **{memory_count}** 条研究记忆，将在下次研究中自动引用。",
+                message_type="progress",
+                metadata={"phase": "memory_extraction", "count": memory_count},
+            )
+
         # --- Wrap up ---
         self.post_message(
             "agent",
@@ -366,6 +378,81 @@ class StudyAgent:
             return []
         manifest = row["artifact_manifest_json"]
         return manifest.get("interviews", []) if isinstance(manifest, dict) else []
+
+    def _extract_and_store_memories(
+        self,
+        *,
+        qual_themes: dict[str, Any],
+        recommendation: dict[str, Any],
+        quant_result: dict[str, Any],
+        bq: str,
+    ) -> int:
+        """Extract key findings from research artifacts and persist as study_memory rows."""
+        memories: list[dict[str, Any]] = []
+
+        # 1. Theme memories
+        for theme in qual_themes.get("themes", [])[:5]:
+            theme_str = theme if isinstance(theme, str) else str(theme)
+            memories.append({
+                "memory_type": "theme",
+                "key": theme_str,
+                "value": f"研究问题「{bq[:60]}」中发现的核心主题：{theme_str}",
+                "confidence": 0.85,
+            })
+
+        # 2. Insight from overall insight
+        overall = qual_themes.get("overall_insight", "")
+        if overall:
+            memories.append({
+                "memory_type": "insight",
+                "key": "overall_insight",
+                "value": overall,
+                "confidence": 0.80,
+            })
+
+        # 3. Segment findings from ranking
+        for r in quant_result.get("ranking", [])[:3]:
+            stim = r.get("stimulus_name", "")
+            score = r.get("score", 0)
+            conf = r.get("confidence_label", "")
+            memories.append({
+                "memory_type": "segment_finding",
+                "key": f"ranking_{stim}",
+                "value": f"{stim} 得分 {score}（{conf}）",
+                "confidence": 0.90,
+            })
+
+        # 4. Winner as brand positioning
+        winner = recommendation.get("winner", "")
+        supporting = recommendation.get("supporting_text", "")
+        if winner:
+            memories.append({
+                "memory_type": "brand_positioning",
+                "key": f"winner_{winner}",
+                "value": f"推荐方案：{winner}。{supporting[:200]}",
+                "confidence": 0.90,
+            })
+
+        if not memories:
+            return 0
+
+        # Get study_id from run
+        study_id = self.study_id
+
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                for m in memories:
+                    cur.execute(
+                        """
+                        INSERT INTO study_memory (study_id, memory_type, key, value, confidence)
+                        VALUES (%s, %s, %s, %s, %s)
+                        """,
+                        (study_id, m["memory_type"], m["key"], m["value"], m["confidence"]),
+                    )
+            conn.commit()
+
+        logger.info("extracted_memories study=%s count=%d", study_id, len(memories))
+        return len(memories)
 
     def _get_qual_themes(self) -> dict[str, Any]:
         with _connect() as conn:

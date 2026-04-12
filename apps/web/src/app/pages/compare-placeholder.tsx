@@ -115,13 +115,15 @@ function ConceptCard({
   data,
   isWinner,
   rank,
-  onAction,
+  studyId,
 }: {
   data: CompareCardData;
   isWinner: boolean;
   rank: number;
   onAction: (action: string) => void;
+  studyId: string;
 }) {
+  const navigate = useNavigate();
   const { ranking, qualTheme, segmentHints } = data;
   const borderCls = isWinner ? 'border-accent/30' : 'border-line';
 
@@ -206,12 +208,23 @@ function ConceptCard({
 
       {/* Actions */}
       <div className="mt-5 flex flex-wrap gap-2 border-t border-line pt-4">
-        <button type="button" onClick={() => onAction(`查看 ${ranking.label} 详细报告`)} className="btn-accent">
+        <button type="button" onClick={() => navigate(`${buildStudyRoute('/workbench', studyId)}?focus=trust`)} className="btn-accent">
           查看详情
         </button>
-        <button type="button" onClick={() => onAction(`导出 ${ranking.label} 数据`)} className="btn-secondary-sm">
+        <button
+          type="button"
+          onClick={() => {
+            const csv = ['概念,综合评分,置信度', `${ranking.label},${ranking.score},${ranking.confidenceLabel}`].join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = `${ranking.label}-对比数据.csv`; a.click();
+            URL.revokeObjectURL(url);
+          }}
+          className="btn-secondary-sm"
+        >
           <Download className="h-3.5 w-3.5" />
-          导出
+          导出 CSV
         </button>
       </div>
     </motion.div>
@@ -245,7 +258,7 @@ function EmptyState() {
       <div className="mt-5 flex flex-wrap gap-3">
         <button
           type="button"
-          onClick={() => navigate('/workbench')}
+          onClick={() => navigate('/studies')}
           className="inline-flex items-center gap-2 rounded-btn border btn-accent"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -480,6 +493,7 @@ export function ComparePlaceholder() {
             isWinner={i === 0}
             rank={i}
             onAction={handleAction}
+            studyId={projection.study.id}
           />
         ))}
       </section>

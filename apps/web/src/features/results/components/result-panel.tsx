@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { DemoScenarioBundle } from '@/types/demo';
 import type { WorkbenchProjection } from '@/app/services/studyRuntime';
 
+import { PodcastPlayer } from './podcast-player';
 import { QuantRanking } from './quant-ranking';
 import { QualThemesSummary } from './qual-themes-summary';
 import { RecommendationSummary } from './recommendation-summary';
@@ -30,6 +31,7 @@ export function ResultPanel({
 }) {
   const [activeTab, setActiveTab] = useState<TabId>('findings');
   const runStatus = projection.current_run?.status;
+  const isComplete = runStatus === 'succeeded' || projection.study.status === 'completed';
   const rawApprovalStatus = projection.latest_plan_version?.approval_status;
   const APPROVAL_LABELS: Record<string, string> = {
     draft: '草稿',
@@ -64,7 +66,7 @@ export function ResultPanel({
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
               {scenario.midrunReviewPanel.metrics.map((metric) => (
                 <div key={metric.label} className="inner-card px-3 py-3 text-sm">
-                  <div className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-tertiary">
+                  <div className="text-[0.65rem] font-semibold tracking-[0.04em] text-tertiary">
                     {metric.label}
                   </div>
                   <div className={`mt-1 font-semibold ${
@@ -82,7 +84,7 @@ export function ResultPanel({
           ) : null}
           {scenario.midrunReviewPanel?.focusThemes.length ? (
             <div className="mt-4">
-              <div className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-tertiary">
+              <div className="text-[0.65rem] font-semibold tracking-[0.04em] text-tertiary">
                 当前重点主题
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
@@ -151,9 +153,20 @@ export function ResultPanel({
       { type: 'quant_execution', label: 'AI 综合评估' },
       { type: 'synthesis', label: '推荐结论' },
     ];
-    const stepMap = new Map(steps.map((s) => [s.step_type, s.status]));
+    const stepMap = new Map(steps.map((s) => [s.step_type, s]));
     const runningStep = steps.find((s) => s.status === 'running');
     const currentLabel = STAGE_ORDER.find((s) => s.type === runningStep?.step_type)?.label ?? '准备中';
+
+    function formatElapsed(startedAt?: string | null, endedAt?: string | null): string | null {
+      if (!startedAt) return null;
+      const start = new Date(startedAt).getTime();
+      const end = endedAt ? new Date(endedAt).getTime() : Date.now();
+      const seconds = Math.round((end - start) / 1000);
+      if (seconds < 60) return `${seconds}s`;
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
+      return `${m}m ${s}s`;
+    }
 
     return (
       <section className="space-y-4">
@@ -164,9 +177,10 @@ export function ResultPanel({
           </div>
           <div className="mt-4 space-y-2">
             {STAGE_ORDER.map((stage) => {
-              const status = stepMap.get(stage.type);
-              const isDone = status === 'succeeded';
-              const isRunning = status === 'running';
+              const step = stepMap.get(stage.type);
+              const isDone = step?.status === 'succeeded';
+              const isRunning = step?.status === 'running';
+              const elapsed = formatElapsed(step?.started_at, step?.ended_at);
               return (
                 <div key={stage.type} className="flex items-center gap-3">
                   <div className={`h-2.5 w-2.5 rounded-full ${
@@ -174,10 +188,14 @@ export function ResultPanel({
                     : isRunning ? 'bg-action animate-pulse shadow-[0_0_6px_rgba(255,107,43,0.5)]'
                     : 'bg-surfaceElevated'
                   }`} />
-                  <span className={`text-sm ${isDone ? 'text-accent' : isRunning ? 'text-text font-medium' : 'text-tertiary'}`}>
+                  <span className={`flex-1 text-sm ${isDone ? 'text-accent' : isRunning ? 'text-text font-medium' : 'text-tertiary'}`}>
                     {stage.label}
                   </span>
-                  {isDone ? <span className="text-[0.6rem] text-accent">完成</span> : null}
+                  {elapsed ? (
+                    <span className={`font-mono text-[0.6rem] ${isDone ? 'text-accent' : 'text-muted'}`}>
+                      {elapsed}
+                    </span>
+                  ) : null}
                 </div>
               );
             })}
@@ -288,6 +306,37 @@ export function ResultPanel({
               </div>
             </div>
           ))}
+        </div>
+      ) : null}
+
+      {/* Insight Radio */}
+      {isComplete ? <PodcastPlayer studyId={projection.study.id} /> : null}
+
+      {/* Cost summary */}
+      {projection.cost_summary ? (
+        <div className="inner-card p-4">
+          <div className="eyebrow text-muted">成本追踪</div>
+          <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+            <div>
+              <span className="text-tertiary">预算</span>
+              <div className="mt-0.5 font-semibold text-text">
+                {projection.cost_summary.estimated_cost ? `¥${projection.cost_summary.estimated_cost}` : '--'}
+              </div>
+            </div>
+            <div>
+              <span className="text-tertiary">实际</span>
+              <div className="mt-0.5 font-semibold text-accent">
+                {projection.cost_summary.actual_cost ? `¥${projection.cost_summary.actual_cost}` : '--'}
+              </div>
+            </div>
+            <div className="col-span-2">
+              <span className="text-tertiary">Token 消耗</span>
+              <div className="mt-0.5 font-mono text-xs text-muted">
+                {((projection.cost_summary.total_prompt_tokens ?? 0) + (projection.cost_summary.total_completion_tokens ?? 0)).toLocaleString()} tokens
+                （提示 {(projection.cost_summary.total_prompt_tokens ?? 0).toLocaleString()} + 生成 {(projection.cost_summary.total_completion_tokens ?? 0).toLocaleString()}）
+              </div>
+            </div>
+          </div>
         </div>
       ) : null}
     </section>

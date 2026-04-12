@@ -98,7 +98,7 @@ describe('studyRuntime service', () => {
           twin_version_ids: ['twin-version-1', 'twin-version-2'],
           stimulus_ids: ['stimulus-1', 'stimulus-2', 'stimulus-3'],
           qual_config: { mode: 'ai_idi', interviews: 6 },
-          quant_config: { mode: 'ssr', sample_size: 120 },
+          quant_config: { mode: 'replica_scoring', replicas: 3 },
           generated_by: 'boss',
           approval_required: true,
         }),

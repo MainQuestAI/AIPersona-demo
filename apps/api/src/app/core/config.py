@@ -18,6 +18,7 @@ class Settings:
     cors_origins: list[str]
     dashscope_api_key: str
     dashscope_model: str
+    api_key_required: bool
 
 
 def _get_bool(name: str, default: str) -> bool:
@@ -57,4 +58,5 @@ def get_settings() -> Settings:
         ),
         dashscope_api_key=os.getenv("DASHSCOPE_API_KEY", ""),
         dashscope_model=os.getenv("DASHSCOPE_MODEL", "qwen-plus"),
+        api_key_required=_get_bool("API_KEY_REQUIRED", "false"),
     )

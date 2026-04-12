@@ -165,6 +165,14 @@ class StudyRuntimeService:
         self._repository = repository
         self._workflow_gateway = workflow_gateway
 
+    @property
+    def repository(self) -> StudyRuntimeRepository:
+        return self._repository
+
+    @property
+    def gateway(self) -> StudyRuntimeWorkflowGateway:
+        return self._workflow_gateway
+
     def create_study(self, command: CreateStudyCommand) -> dict[str, Any]:
         return self._repository.create_study_bundle(command)
 

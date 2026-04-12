@@ -69,7 +69,7 @@ export function CalibrationCenterPage() {
         <div className="flex items-start gap-3">
           <AlertTriangle className="mt-0.5 h-5 w-5 text-danger" />
           <div>
-            <div className="eyebrow text-danger">Calibration Center</div>
+            <div className="eyebrow text-danger">校准中心</div>
             <p className="mt-2 text-sm text-muted">{state.message}</p>
           </div>
         </div>

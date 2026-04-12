@@ -1,8 +1,10 @@
 import { type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { Menu } from 'lucide-react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { APP_ROUTES, STUDY_DETAIL_VIEWS } from '@/types/route';
 import { useLatestStudySession } from '../hooks/useLatestStudySession';
+import { useShellUiStore } from '../providers';
 import { buildStudyRoute } from '../services/studyRuntimeViews';
 import { getActiveStudyId } from '../services/studySession';
 import { GlobalRail } from './global-rail';
@@ -27,6 +29,7 @@ export function AppShell({ children }: AppShellProps) {
   const routeMeta = getRouteMeta(location.pathname);
   const studyId = getActiveStudyId(location.pathname, location.search);
   const latestStudy = useLatestStudySession();
+  const setMobileRailOpen = useShellUiStore((state) => state.setMobileRailOpen);
 
   return (
     <div className="min-h-screen bg-bg text-text">
@@ -74,64 +77,48 @@ export function AppShell({ children }: AppShellProps) {
         <GlobalRail />
         <div className="flex h-screen flex-1 flex-col overflow-hidden">
           <header className="flex-none border-b border-line bg-bg/80 backdrop-blur-xl z-20">
-            <div className="flex items-center justify-between gap-4 px-6 py-3 sm:px-8">
+            <div className="flex items-center justify-between gap-4 px-4 py-3 sm:px-8">
               <div className="flex items-center gap-3">
-                <div className="eyebrow text-tertiary">AIpersona</div>
+                <button
+                  type="button"
+                  onClick={() => setMobileRailOpen(true)}
+                  className="grid md:hidden h-9 w-9 place-items-center rounded-btn border border-line bg-panel text-muted transition hover:text-text"
+                  aria-label="打开导航"
+                >
+                  <Menu className="h-4 w-4" />
+                </button>
+                <div className="eyebrow text-tertiary hidden sm:block">AIpersona</div>
                 <h1 className="text-lg font-semibold tracking-[-0.02em] text-text">
                   {routeMeta.label}
                 </h1>
               </div>
             </div>
-            {studyId ? (
-              <div className="border-t border-line px-6 py-3 sm:px-8">
+            {studyId && location.pathname.startsWith('/studies/') ? (
+              <div className="border-t border-line px-6 py-2.5 sm:px-8">
                 <div className="flex flex-wrap items-center gap-3">
-                  <div className="rounded-btn border border-accent/30 bg-accentSoft px-3 py-1 eyebrow text-accent">
-                    研究进行中
-                  </div>
                   {latestStudy?.businessQuestion ? (
                     <div className="max-w-xs truncate text-sm text-muted">
                       {latestStudy.businessQuestion}
                     </div>
                   ) : null}
-                  {location.pathname.startsWith('/studies/') ? (
-                    <div className="flex flex-wrap gap-2">
-                      {STUDY_DETAIL_VIEWS.map((view) => (
-                        <NavLink
-                          key={view.key}
-                          to={buildStudyRoute(`/${view.key}`, studyId)}
-                          className={({ isActive }) =>
-                            [
-                              'rounded-btn border px-3 py-1 eyebrow transition',
-                              isActive
-                                ? 'border-accent/35 bg-accentSoft text-text'
-                                : 'border-line bg-panel text-muted hover:border-accent/35 hover:text-text',
-                            ].join(' ')
-                          }
-                        >
-                          {view.label}
-                        </NavLink>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            ) : latestStudy ? (
-              <div className="border-t border-line px-6 py-3 sm:px-8">
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="rounded-btn border border-accent/30 bg-accentSoft px-3 py-1 eyebrow text-accent">
-                    最近研究就绪
+                  <div className="flex flex-wrap gap-2">
+                    {STUDY_DETAIL_VIEWS.map((view) => (
+                      <NavLink
+                        key={view.key}
+                        to={buildStudyRoute(`/${view.key}`, studyId)}
+                        className={({ isActive }) =>
+                          [
+                            'rounded-btn border px-3 py-1 eyebrow transition',
+                            isActive
+                              ? 'border-accent/35 bg-accentSoft text-text'
+                              : 'border-line bg-panel text-muted hover:border-accent/35 hover:text-text',
+                          ].join(' ')
+                        }
+                      >
+                        {view.label}
+                      </NavLink>
+                    ))}
                   </div>
-                  {latestStudy.businessQuestion ? (
-                    <div className="max-w-sm truncate text-sm text-muted">
-                      {latestStudy.businessQuestion}
-                    </div>
-                  ) : null}
-                  <NavLink
-                    to={buildStudyRoute('/workbench', latestStudy.id)}
-                    className="btn-accent"
-                  >
-                    继续上次研究
-                  </NavLink>
                 </div>
               </div>
             ) : null}

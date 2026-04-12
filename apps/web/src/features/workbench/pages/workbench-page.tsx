@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ChevronDown, Info } from 'lucide-react';
+import { ChevronDown, Info, Loader2 } from 'lucide-react';
 
 import { buildStudyRoute } from '@/app/services/studyRuntimeViews';
 import {
   fetchAgentMessages,
+  listStudyMemories,
   postAgentReply,
   type AgentMessage,
+  type StudyMemoryRecord,
   type WorkbenchProjection,
 } from '@/app/services/studyRuntime';
 import { useWorkbenchUiStore } from '@/app/store/ui-store';
@@ -18,6 +20,7 @@ import {
   buildStudySessionBoard,
   getPitchScenarioBundle,
 } from '@/app/services/workbenchRuntimeBridge';
+import { TwinSelectorModal } from '@/features/workbench/components/twin-selector-modal';
 import { DrawerShell } from '@/features/evidence/components/drawer-shell';
 import { InputSourcesDrawer } from '@/features/evidence/components/input-sources-drawer';
 import { ReplayModal } from '@/features/evidence/components/replay-modal';
@@ -45,6 +48,8 @@ export function WorkbenchPage({
   const closeReplay = useWorkbenchUiStore((state) => state.closeReplay);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [resultDrawerOpen, setResultDrawerOpen] = useState(false);
+  const [memories, setMemories] = useState<StudyMemoryRecord[]>([]);
+  const [twinSelectorOpen, setTwinSelectorOpen] = useState(false);
 
   const studyId = projection.study.id;
   const scenario = useMemo(() => getPitchScenarioBundle(projection), [projection]);
@@ -81,6 +86,15 @@ export function WorkbenchPage({
     return () => { active = false; clearInterval(interval); };
   }, [studyId]);
 
+  // Load study memories
+  useEffect(() => {
+    let active = true;
+    void listStudyMemories(studyId).then((data) => {
+      if (active) setMemories(data);
+    }).catch(() => { /* ignore */ });
+    return () => { active = false; };
+  }, [studyId]);
+
   // Handle focus search params (trust/inputs/twins/replay drawers)
   useEffect(() => {
     const focus = searchParams.get('focus');
@@ -103,6 +117,7 @@ export function WorkbenchPage({
     if (action === '查看计划详情') { setDetailsOpen(true); return; }
     if (action === '查看详细对比') { navigate(buildStudyRoute('/compare', studyId)); return; }
     if (action === '查看研究回放') { openReplay(); return; }
+    if (action === '调整配置') { setTwinSelectorOpen(true); return; }
     if (action === '下载报告') {
       const hasReport = projection.artifacts?.some((a) => a.artifact_type === 'report' && a.status === 'ready');
       if (hasReport) {
@@ -155,6 +170,18 @@ export function WorkbenchPage({
   };
   const currentStatus = (rawStatus ? STATUS_LABELS[rawStatus] : undefined) ?? rawStatus ?? '未知';
 
+  // Determine whether the study is in an active execution phase.
+  // When active + no agent messages yet, we must NOT show the ConversationThread fallback
+  // (which contains a plan_approval_card) — that would contradict the right ResultPanel's state.
+  const runStatus = projection.current_run?.status;
+  const isActiveStudy =
+    runStatus === 'running' ||
+    runStatus === 'queued' ||
+    runStatus === 'awaiting_midrun_approval' ||
+    runStatus === 'succeeded' ||
+    projection.study.status === 'completed' ||
+    projection.study.status === 'running';
+
   const progressSegments = sessionBoard.map((card) => ({
     id: card.id, label: card.label, status: card.status,
   }));
@@ -196,13 +223,68 @@ export function WorkbenchPage({
         </div>
         <p className="mt-1.5 text-sm text-muted">{executiveSummary.detail}</p>
         {detailsOpen ? (
-          <div className="mt-3 grid gap-2 inner-card p-4 text-xs text-muted sm:grid-cols-3 lg:grid-cols-6">
-            <div><span className="text-tertiary">孪生：</span>{setupBarData.consumerTwinsLabel}</div>
-            <div><span className="text-tertiary">构建自：</span>{setupBarData.builtFrom}</div>
-            <div><span className="text-tertiary">标杆包：</span>{setupBarData.benchmarkPack}</div>
-            <div><span className="text-tertiary">更新：</span>{setupBarData.lastUpdated}</div>
-            <div><span className="text-tertiary">刺激物：</span>{scenario.studyPlanVersion.selectedStimuli.join(' / ')}</div>
-            <div><span className="text-tertiary">版本：</span>{projection.latest_plan_version?.version_no ? `v${projection.latest_plan_version.version_no}` : '--'}</div>
+          <div className="mt-3 space-y-3">
+            <div className="grid gap-2 inner-card p-4 text-xs text-muted sm:grid-cols-3 lg:grid-cols-6">
+              <div><span className="text-tertiary">孪生：</span>{setupBarData.consumerTwinsLabel}</div>
+              <div><span className="text-tertiary">构建自：</span>{setupBarData.builtFrom}</div>
+              <div><span className="text-tertiary">标杆包：</span>{setupBarData.benchmarkPack}</div>
+              <div><span className="text-tertiary">更新：</span>{setupBarData.lastUpdated}</div>
+              <div><span className="text-tertiary">刺激物：</span>{scenario.studyPlanVersion.selectedStimuli.join(' / ')}</div>
+              <div><span className="text-tertiary">版本：</span>{projection.latest_plan_version?.version_no ? `v${projection.latest_plan_version.version_no}` : '--'}</div>
+            </div>
+            {projection.approval_gates && projection.approval_gates.length > 0 ? (
+              <div className="inner-card p-4">
+                <div className="eyebrow text-accent mb-2">审批链</div>
+                <div className="space-y-2">
+                  {projection.approval_gates.map((gate) => {
+                    const GATE_LABELS: Record<string, string> = {
+                      plan: '计划审批', midrun: '中途审核', artifact: '产物审批', rerun: '重跑审批',
+                    };
+                    const STATUS_LABELS: Record<string, string> = {
+                      requested: '待审批', approved: '已通过', rejected: '已驳回', bypassed: '已跳过',
+                    };
+                    const STATUS_COLORS: Record<string, string> = {
+                      requested: 'text-warning', approved: 'text-accent', rejected: 'text-danger', bypassed: 'text-muted',
+                    };
+                    const label = GATE_LABELS[gate.approval_type ?? ''] ?? gate.approval_type ?? '审批';
+                    const statusLabel = STATUS_LABELS[gate.status ?? ''] ?? gate.status ?? '未知';
+                    const statusColor = STATUS_COLORS[gate.status ?? ''] ?? 'text-muted';
+                    const time = gate.updated_at ? new Date(gate.updated_at).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+                    return (
+                      <div key={gate.id} className="flex items-center gap-3 text-xs">
+                        <div className={`h-2 w-2 rounded-full ${gate.status === 'approved' ? 'bg-accent' : gate.status === 'requested' ? 'bg-warning' : 'bg-surfaceElevated'}`} />
+                        <span className="font-medium text-text">{label}</span>
+                        <span className={statusColor}>{statusLabel}</span>
+                        {gate.approved_by ? <span className="text-tertiary">by {gate.approved_by}</span> : null}
+                        {gate.decision_comment ? <span className="text-muted truncate max-w-[200px]">{gate.decision_comment}</span> : null}
+                        {time ? <span className="ml-auto text-tertiary">{time}</span> : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+            {memories.length > 0 ? (
+              <div className="inner-card p-4">
+                <div className="eyebrow text-accent mb-2">研究记忆（{memories.length}）</div>
+                <div className="space-y-1.5">
+                  {memories.map((m) => {
+                    const TYPE_LABELS: Record<string, string> = {
+                      theme: '主题', insight: '洞察', segment_finding: '发现',
+                      brand_positioning: '定位', preference: '偏好',
+                    };
+                    return (
+                      <div key={m.id} className="flex items-start gap-2 text-xs">
+                        <span className="shrink-0 rounded-btn bg-accent/10 px-1.5 py-0.5 text-[0.55rem] font-medium text-accent">
+                          {TYPE_LABELS[m.memory_type] ?? m.memory_type}
+                        </span>
+                        <span className="text-muted">{m.value}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -218,6 +300,30 @@ export function WorkbenchPage({
                 sending={sending}
                 onAction={handleAction}
               />
+            ) : isActiveStudy ? (
+              // Study is running/completed but no agent messages yet.
+              // Show a status-consistent placeholder — do NOT render ConversationThread
+              // here, which would show stale plan_approval_card and contradict ResultPanel.
+              <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
+                {runStatus === 'succeeded' || projection.study.status === 'completed' ? (
+                  <div className="glass-panel p-6 max-w-sm">
+                    <div className="eyebrow text-accent mb-2">研究已完成</div>
+                    <p className="text-sm text-muted">
+                      推荐结论已在右侧结果面板。你可以在下方继续追问研究助手。
+                    </p>
+                  </div>
+                ) : (
+                  <div className="glass-panel p-6 max-w-sm">
+                    <div className="flex items-center justify-center gap-2 mb-2">
+                      <Loader2 className="h-4 w-4 animate-spin text-accent" />
+                      <div className="eyebrow text-accent">研究执行中</div>
+                    </div>
+                    <p className="text-sm text-muted">
+                      AI 研究助手正在运行，执行进度将在这里实时更新。
+                    </p>
+                  </div>
+                )}
+              </div>
             ) : (
               <ConversationThread
                 events={fallbackEvents}
@@ -261,6 +367,22 @@ export function WorkbenchPage({
         onClose={closeDrawer}
       />
       <ReplayModal open={replayOpen} replay={scenario.replay} onClose={closeReplay} />
+      <TwinSelectorModal
+        open={twinSelectorOpen}
+        onClose={() => setTwinSelectorOpen(false)}
+        onConfirm={async (ids) => {
+          setTwinSelectorOpen(false);
+          setSending(true);
+          try {
+            await postAgentReply(studyId, {
+              action_id: 'edit_plan',
+              action: JSON.stringify({ twin_version_ids: ids }),
+            });
+          } finally {
+            setSending(false);
+          }
+        }}
+      />
       <DrawerShell open={resultDrawerOpen} onClose={() => setResultDrawerOpen(false)} ariaLabel="研究结果">
         <div className="flex items-center justify-between gap-3 mb-4">
           <div className="eyebrow text-muted">研究结果</div>

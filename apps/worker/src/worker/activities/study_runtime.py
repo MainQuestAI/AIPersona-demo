@@ -335,31 +335,84 @@ def _build_report_html(
         f"<li>{html.escape(str(item))}</li>"
         for item in management_summary.get("evidence_points", [])
     )
+    # Cost summary
+    cost_est = context.get("estimated_cost") or management_summary.get("estimated_cost")
+    cost_actual = management_summary.get("actual_cost") or quant_ranking.get("usage", {}).get("cost_estimate")
+    cost_html = ""
+    if cost_est or cost_actual:
+        cost_html = (
+            "<div class='card' style='margin-top:24px'>"
+            "<div class='label'>成本追踪</div>"
+            "<div style='display:flex;gap:32px;margin-top:8px'>"
+            f"<div><div class='label'>预算</div><div style='font-size:18px;font-weight:700;margin-top:4px'>¥{cost_est or '--'}</div></div>"
+            f"<div><div class='label'>实际</div><div style='font-size:18px;font-weight:700;margin-top:4px;color:#6366f1'>¥{cost_actual or '--'}</div></div>"
+            "</div></div>"
+        )
+
+    # Ranking table
+    ranking_table = ""
+    if ranking:
+        rows = "".join(
+            f"<tr>"
+            f"<td style='padding:10px 14px;border-bottom:1px solid #1a1a2e'>{i+1}</td>"
+            f"<td style='padding:10px 14px;border-bottom:1px solid #1a1a2e;font-weight:600'>{html.escape(str(item.get('stimulus_name','')))}</td>"
+            f"<td style='padding:10px 14px;border-bottom:1px solid #1a1a2e;text-align:right;font-size:20px;font-weight:700'>{item.get('score','--')}</td>"
+            f"<td style='padding:10px 14px;border-bottom:1px solid #1a1a2e;text-align:right;color:#6366f1'>{html.escape(str(item.get('confidence_label','')))}</td>"
+            f"</tr>"
+            for i, item in enumerate(ranking)
+        )
+        ranking_table = (
+            "<table style='width:100%;border-collapse:collapse;margin-top:12px'>"
+            "<thead><tr style='color:#666;font-size:11px;text-transform:uppercase;letter-spacing:0.04em'>"
+            "<th style='padding:10px 14px;text-align:left'>#</th>"
+            "<th style='padding:10px 14px;text-align:left'>概念</th>"
+            "<th style='padding:10px 14px;text-align:right'>得分</th>"
+            "<th style='padding:10px 14px;text-align:right'>置信度</th>"
+            "</tr></thead>"
+            f"<tbody>{rows}</tbody></table>"
+        )
+
     style = (
         "<style>"
-        "body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Noto Sans SC',sans-serif;"
-        "max-width:800px;margin:40px auto;padding:0 24px;color:#1a1a1a;line-height:1.7;}"
-        "h1{font-size:1.6em;border-bottom:2px solid #6366f1;padding-bottom:12px;margin-bottom:24px;}"
-        "h2{font-size:1.2em;color:#6366f1;margin-top:32px;}"
-        "h3{font-size:1em;color:#555;margin-top:24px;}"
-        "p{margin:8px 0;}"
-        "ul,ol{padding-left:24px;}"
-        "li{margin:6px 0;padding:8px 12px;background:#f8f9fa;border-radius:6px;list-style-position:inside;}"
-        ".footer{margin-top:48px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:0.8em;color:#9ca3af;}"
+        "body{margin:0;padding:0;background:#030305;color:#e8e8ec;"
+        "font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Noto Sans SC',sans-serif;line-height:1.7;}"
+        ".container{max-width:720px;margin:0 auto;padding:40px 28px;}"
+        ".badge{display:inline-block;background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.3);"
+        "color:#6366f1;padding:4px 14px;border-radius:20px;font-size:11px;font-weight:600;}"
+        "h1{font-size:26px;font-weight:700;letter-spacing:-0.02em;margin:20px 0 12px;color:#f0f0f4;}"
+        "h2{font-size:18px;color:#6366f1;margin-top:36px;font-weight:600;}"
+        "h3{font-size:14px;color:#888;margin-top:24px;text-transform:uppercase;letter-spacing:0.04em;}"
+        "p{margin:10px 0;color:#bbb;font-size:14px;}"
+        ".card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);"
+        "border-radius:12px;padding:20px;margin:16px 0;}"
+        ".winner{font-size:32px;font-weight:700;color:#6366f1;margin:8px 0;}"
+        ".label{font-size:11px;color:#666;text-transform:uppercase;letter-spacing:0.04em;}"
+        "ul{padding-left:20px;}"
+        "li{margin:8px 0;padding:10px 14px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);"
+        "border-radius:8px;list-style-position:inside;color:#ccc;font-size:13px;}"
+        ".footer{margin-top:48px;padding-top:20px;border-top:1px solid rgba(255,255,255,.06);"
+        "font-size:12px;color:#555;text-align:center;}"
         "</style>"
     )
     from datetime import datetime
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    winner = html.escape(str(management_summary.get("headline", "管理层摘要")))
     return (
-        f"<!DOCTYPE html><html><head><meta charset='utf-8'><title>研究报告</title>{style}</head><body>"
+        f"<!DOCTYPE html><html lang='zh-CN'><head><meta charset='utf-8'>"
+        f"<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        f"<title>{html.escape(str(context.get('business_question', '研究报告')))} — AIpersona</title>{style}</head><body>"
+        f"<div class='container'>"
+        f"<span class='badge'>AIpersona 管理层简报</span>"
         f"<h1>{html.escape(str(context.get('business_question', 'AIpersona 研究报告')))}</h1>"
-        f"<h2>{html.escape(str(management_summary.get('headline', '管理层摘要')))}</h2>"
-        f"<p>{html.escape(str(management_summary.get('supporting_text', '')))}</p>"
-        f"<h3>推荐下一步</h3><p>{html.escape(str(management_summary.get('next_action', '待确认')))}</p>"
+        f"<div class='card'><div class='label'>研究结论</div>"
+        f"<div class='winner'>{winner}</div>"
+        f"<p>{html.escape(str(management_summary.get('supporting_text', '')))}</p></div>"
+        f"<h3>推荐下一步</h3><p style='font-size:15px;color:#e8e8ec;font-weight:500'>{html.escape(str(management_summary.get('next_action', '待确认')))}</p>"
+        f"<h3>排序结果</h3>{ranking_table}"
         f"<h3>关键证据</h3><ul>{evidence_items}</ul>"
-        f"<h3>排序结果</h3><ol>{ranking_items}</ol>"
+        f"{cost_html}"
         f"<div class='footer'>AI Consumer Research Report · 生成于 {timestamp} · AIpersona</div>"
-        "</body></html>"
+        f"</div></body></html>"
     )
 
 
