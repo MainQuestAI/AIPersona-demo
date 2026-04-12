@@ -12,9 +12,6 @@ class Settings:
     reload: bool
     log_level: str
     database_url: str
-    temporal_target: str
-    temporal_namespace: str
-    temporal_task_queue: str
     cors_origins: list[str]
     dashscope_api_key: str
     dashscope_model: str
@@ -49,9 +46,6 @@ def get_settings() -> Settings:
         reload=_get_bool("API_RELOAD", "true"),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
         database_url=os.getenv("DATABASE_URL", ""),
-        temporal_target=os.getenv("TEMPORAL_ADDRESS", "localhost:7233"),
-        temporal_namespace=os.getenv("TEMPORAL_NAMESPACE", "default"),
-        temporal_task_queue=os.getenv("TEMPORAL_TASK_QUEUE", "study-task-queue"),
         cors_origins=_get_list(
             "API_CORS_ORIGINS",
             _default_cors_origins(),

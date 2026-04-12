@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI):
         extra={
             "service": settings.service_name,
             "environment": settings.environment,
-            "temporal_target": settings.temporal_target,
+            "runtime": "langgraph",
         },
     )
     yield

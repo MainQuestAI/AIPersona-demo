@@ -5,12 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "aipersona-worker"
 version = "0.1.0"
-description = "Temporal worker runtime entry for the AIpersona demo"
-requires-python = ">=3.9"
+description = "LangGraph research agent worker for AIpersona"
+requires-python = ">=3.10"
 dependencies = [
   "psycopg[binary]>=3.2,<4.0",
-  "temporalio>=1.0,<2.0",
   "openai>=1.0,<2.0",
+  "langgraph>=0.4",
+  "langgraph-checkpoint-postgres>=2.0",
 ]
 
 [tool.setuptools]

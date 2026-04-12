@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 from app.study_runtime.projections import build_workbench_projection
-from app.study_runtime.gateway import TemporalStudyRuntimeWorkflowGateway
+from app.study_runtime.gateway import LangGraphStudyGateway
 from app.study_runtime.repository import PostgresStudyRuntimeRepository
 from app.study_runtime.service import (
     ApprovalDecision,
@@ -75,10 +75,8 @@ class AssetImportRequest(BaseModel):
 def get_study_runtime_service(request: Request) -> StudyRuntimeService:
     settings = request.app.state.settings
     repository = PostgresStudyRuntimeRepository(settings.database_url)
-    workflow_gateway = TemporalStudyRuntimeWorkflowGateway(
-        temporal_target=settings.temporal_target,
-        namespace=settings.temporal_namespace,
-        task_queue=settings.temporal_task_queue,
+    workflow_gateway = LangGraphStudyGateway(
+        database_url=settings.database_url,
     )
     return StudyRuntimeService(
         repository=repository,

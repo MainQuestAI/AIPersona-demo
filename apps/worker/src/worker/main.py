@@ -1,3 +1,9 @@
+"""Worker entry point.
+
+With LangGraph, the graph runs in-process (via gateway background threads).
+This worker process is kept for standalone execution and health checks.
+"""
+
 import asyncio
 import logging
 
@@ -19,45 +25,24 @@ async def run_worker() -> None:
     _configure_logging(settings.log_level)
 
     logger.info(
-        "worker_starting",
+        "worker_starting (langgraph mode)",
         extra={
             "service": settings.service_name,
             "environment": settings.environment,
-            "temporal_address": settings.temporal_address,
-            "namespace": settings.temporal_namespace,
-            "task_queue": settings.task_queue,
         },
     )
 
-    from temporalio.client import Client
-    from temporalio.worker import Worker
-    from worker.activities import (
-        advance_to_midrun_review,
-        agent_midrun_to_complete,
-        agent_plan_to_midrun,
-        complete_study_run,
-        mark_run_running,
-    )
-    from worker.workflows import AgentStudyWorkflow, LegacyStudyWorkflow, StudyWorkflow
+    # Verify graph can be built
+    from worker.graph.builder import build_research_graph
+    graph = build_research_graph()
+    logger.info("research_graph_ready nodes=%d", len(graph.nodes))
 
-    client = await Client.connect(
-        settings.temporal_address,
-        namespace=settings.temporal_namespace,
-    )
-
-    worker = Worker(
-        client,
-        task_queue=settings.task_queue,
-        activities=[
-            mark_run_running,
-            advance_to_midrun_review,
-            complete_study_run,
-            agent_plan_to_midrun,
-            agent_midrun_to_complete,
-        ],
-        workflows=[StudyWorkflow, LegacyStudyWorkflow, AgentStudyWorkflow],
-    )
-    await worker.run()
+    # Keep alive (graph execution happens via API gateway threads)
+    try:
+        while True:
+            await asyncio.sleep(60)
+    except asyncio.CancelledError:
+        logger.info("worker_stopping")
 
 
 def main() -> None:

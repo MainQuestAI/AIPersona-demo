@@ -11,9 +11,6 @@ from typing import Any, Iterator, Optional
 import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Json
-from temporalio import activity
-from temporalio.exceptions import ApplicationError
-
 from worker.llm import LLMRequestError, chat_json_with_metadata, chat_with_metadata
 
 logger = logging.getLogger(__name__)
@@ -980,60 +977,16 @@ def _complete_study_run(payload: dict[str, Optional[str]]) -> None:
 
 
 # ---------------------------------------------------------------------------
-#  Temporal activity wrappers
+#  Legacy activity wrappers (kept as plain functions for backward compat)
 # ---------------------------------------------------------------------------
 
-@activity.defn
 async def mark_run_running(payload: dict[str, str]) -> None:
     await asyncio.to_thread(_mark_run_running, payload)
 
 
-@activity.defn
 async def advance_to_midrun_review(payload: dict[str, str]) -> None:
-    try:
-        await asyncio.to_thread(_advance_to_midrun_review, payload)
-    except LLMRequestError as exc:
-        raise ApplicationError(str(exc), type="llm_transient_error", non_retryable=False) from exc
+    await asyncio.to_thread(_advance_to_midrun_review, payload)
 
 
-@activity.defn
 async def complete_study_run(payload: dict[str, Optional[str]]) -> None:
-    try:
-        await asyncio.to_thread(_complete_study_run, payload)
-    except LLMRequestError as exc:
-        raise ApplicationError(str(exc), type="llm_transient_error", non_retryable=False) from exc
-
-
-# ---------------------------------------------------------------------------
-#  Agent-driven activities
-# ---------------------------------------------------------------------------
-
-def _run_agent_plan_to_midrun(payload: dict[str, str]) -> None:
-    from worker.agent import StudyAgent
-    agent = StudyAgent(study_id=payload["study_id"], run_id=payload["study_run_id"])
-    agent.run_plan_to_midrun()
-
-
-def _run_agent_midrun_to_complete(payload: dict[str, Optional[str]]) -> None:
-    from worker.agent import StudyAgent
-    agent = StudyAgent(study_id=payload["study_id"], run_id=payload["study_run_id"])
-    agent.run_midrun_to_complete(
-        approved_by=payload.get("approved_by"),
-        decision_comment=payload.get("decision_comment"),
-    )
-
-
-@activity.defn
-async def agent_plan_to_midrun(payload: dict[str, str]) -> None:
-    try:
-        await asyncio.to_thread(_run_agent_plan_to_midrun, payload)
-    except LLMRequestError as exc:
-        raise ApplicationError(str(exc), type="llm_transient_error", non_retryable=False) from exc
-
-
-@activity.defn
-async def agent_midrun_to_complete(payload: dict[str, Optional[str]]) -> None:
-    try:
-        await asyncio.to_thread(_run_agent_midrun_to_complete, payload)
-    except LLMRequestError as exc:
-        raise ApplicationError(str(exc), type="llm_transient_error", non_retryable=False) from exc
+    await asyncio.to_thread(_complete_study_run, payload)
