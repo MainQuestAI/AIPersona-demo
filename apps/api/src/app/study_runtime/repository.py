@@ -27,7 +27,12 @@ class PostgresStudyRuntimeRepository:
 
     @contextmanager
     def _connect(self) -> Iterator[psycopg.Connection[Any]]:
-        with psycopg.connect(self._database_url, row_factory=dict_row) as connection:
+        with psycopg.connect(
+            self._database_url,
+            row_factory=dict_row,
+            connect_timeout=5,
+            options="-c statement_timeout=8000",
+        ) as connection:
             yield connection
 
     def create_study_bundle(self, command: CreateStudyCommand) -> dict[str, Any]:
@@ -385,6 +390,30 @@ class PostgresStudyRuntimeRepository:
                 )
             connection.commit()
 
+    def fail_run(self, study_id: str, run_id: str, reason: str | None = None) -> None:
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE study_run
+                    SET status = 'failed',
+                        ended_at = now(),
+                        updated_at = now()
+                    WHERE id = %s AND study_id = %s
+                    """,
+                    (run_id, study_id),
+                )
+                cursor.execute(
+                    """
+                    UPDATE study
+                    SET status = 'planning',
+                        updated_at = now()
+                    WHERE id = %s
+                    """,
+                    (study_id,),
+                )
+            connection.commit()
+
     def get_run(self, study_id: str, run_id: str) -> dict[str, Any] | None:
         with self._connect() as connection:
             with connection.cursor() as cursor:
@@ -416,6 +445,53 @@ class PostgresStudyRuntimeRepository:
         payload["run_steps"] = [self._serialize_record(step) for step in steps]
         payload["approval_gates"] = [self._serialize_record(gate) for gate in approval_gates]
         return payload
+
+    def pause_run_for_adjustment(
+        self,
+        *,
+        study_id: str,
+        run_id: str,
+        actor: str,
+        decision_comment: str | None,
+    ) -> dict[str, Any]:
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE approval_gate
+                    SET status = 'rejected',
+                        approved_by = %s,
+                        decision_comment = %s,
+                        updated_at = now()
+                    WHERE scope_type = 'study_run'
+                      AND scope_ref_id = %s
+                      AND approval_type = 'midrun'
+                      AND status = 'requested'
+                    """,
+                    (actor, decision_comment, run_id),
+                )
+                cursor.execute(
+                    """
+                    UPDATE study_run
+                    SET status = 'paused_for_adjustment',
+                        updated_at = now()
+                    WHERE id = %s AND study_id = %s
+                    RETURNING *
+                    """,
+                    (run_id, study_id),
+                )
+                run = cursor.fetchone()
+                cursor.execute(
+                    """
+                    UPDATE study
+                    SET status = 'planning',
+                        updated_at = now()
+                    WHERE id = %s
+                    """,
+                    (study_id,),
+                )
+            connection.commit()
+        return self._serialize_record(run)
 
     def bootstrap_seed_assets(self) -> dict[str, Any]:
         with self._connect() as connection:
@@ -568,6 +644,10 @@ class PostgresStudyRuntimeRepository:
                     "id": item["id"],
                     "name": item["persona_profile_snapshot_json"].get("name"),
                     "version_no": item["version_no"],
+                    "target_audience_label": item["persona_profile_snapshot_json"].get("audience_label"),
+                    "brand_name": item["persona_profile_snapshot_json"].get("brand_name"),
+                    "persona_tier": item["persona_profile_snapshot_json"].get("persona_tier"),
+                    "default_demo": bool((item.get("source_lineage") or {}).get("default_demo")),
                 }
                 for item in SEED_TWIN_VERSIONS
             ],
@@ -975,16 +1055,22 @@ class PostgresStudyRuntimeRepository:
         name = profile_data.get("name", audience_label)
         profile_json = {
             "name": name,
+            "brand_name": profile_data.get("brand_name", "自定义品牌"),
+            "brand_category": profile_data.get("brand_category", "User Generated"),
             "audience_label": audience_label,
             "age_range": profile_data.get("age_range", "未知"),
-            "built_from": "访谈文本 AI 提取",
-            "research_readiness": ["概念筛选", "命名测试"],
-            "version_notes": f"基于 {audience_label} 访谈文本自动生成。",
+            "persona_tier": profile_data.get("persona_tier", "generated"),
+            "built_from": profile_data.get("built_from", "访谈文本 AI 提取"),
+            "research_readiness": profile_data.get("research_readiness", ["概念筛选", "命名测试"]),
+            "version_notes": profile_data.get("version_notes", f"基于 {audience_label} 访谈文本自动生成。"),
             "system_prompt": profile_data.get("system_prompt", f"你是一位{audience_label}消费者。"),
-            "demographics": profile_data.get("demographics", ""),
-            "behavioral": profile_data.get("behavioral", ""),
-            "psychological": profile_data.get("psychological", ""),
-            "needs_pain_points": profile_data.get("needs_pain_points", ""),
+            "demographics": profile_data.get("demographics", {}),
+            "geographic": profile_data.get("geographic", {}),
+            "behavioral": profile_data.get("behavioral", {}),
+            "psychological": profile_data.get("psychological", {}),
+            "needs": profile_data.get("needs", {}),
+            "tech_acceptance": profile_data.get("tech_acceptance", {}),
+            "social_relations": profile_data.get("social_relations", {}),
         }
 
         with self._connect() as connection:
@@ -996,7 +1082,11 @@ class PostgresStudyRuntimeRepository:
                     VALUES (%s, %s, %s)
                     RETURNING id
                     """,
-                    (audience_label, "User Generated", profile_data.get("demographics", "")),
+                    (
+                        audience_label,
+                        profile_data.get("brand_category", "User Generated"),
+                        profile_data.get("version_notes", f"{audience_label} 自动生成画像"),
+                    ),
                 )
                 ta_id = str(cursor.fetchone()["id"])
 
@@ -1032,7 +1122,14 @@ class PostgresStudyRuntimeRepository:
                     (
                         ct_id,
                         PgJson(profile_json),
-                        PgJson({"source": "interview_text_extraction", "notes": f"AI extracted from {audience_label} interview text"}),
+                        PgJson(
+                            {
+                                "source": "interview_text_extraction",
+                                "brand_name": profile_json["brand_name"],
+                                "persona_tier": profile_json["persona_tier"],
+                                "notes": f"AI extracted from {audience_label} interview text",
+                            }
+                        ),
                     ),
                 )
                 tv_id = str(cursor.fetchone()["id"])
@@ -1059,34 +1156,67 @@ class PostgresStudyRuntimeRepository:
         """Create a new study_plan_version based on an edited configuration."""
         from psycopg.types.json import Json as PgJson
 
-        plan_id = str(base_version.get("study_plan_id", ""))
-        base_version_no = int(base_version.get("version_no", 0))
-        new_version_no = base_version_no + 1
-
         with self._connect() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
+                    SELECT COALESCE(MAX(version_no), 0) AS max_version_no
+                    FROM study_plan_version
+                    WHERE study_id = %s
+                    """,
+                    (study_id,),
+                )
+                version_row = cursor.fetchone()
+                new_version_no = int((version_row or {}).get("max_version_no", 0)) + 1
+
+                cursor.execute(
+                    """
                     INSERT INTO study_plan_version (
-                      study_plan_id, version_no, approval_status,
+                      study_id, version_no, business_goal_json,
                       twin_version_ids, stimulus_ids,
+                      anchor_set_id, agent_config_ids,
                       qual_config_json, quant_config_json,
-                      generated_by, approval_required
+                      estimated_cost, approval_required,
+                      approval_status, generated_by, status
                     )
-                    VALUES (%s, %s, 'draft', %s, %s, %s, %s, %s, true)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'draft', %s, 'draft')
                     RETURNING *
                     """,
                     (
-                        plan_id,
+                        study_id,
                         new_version_no,
+                        PgJson(base_version.get("business_goal_json", {})),
                         twin_version_ids,
                         stimulus_ids,
+                        base_version.get("anchor_set_id"),
+                        base_version.get("agent_config_ids", []),
                         PgJson(base_version.get("qual_config_json", {})),
                         PgJson(base_version.get("quant_config_json", {})),
+                        base_version.get("estimated_cost"),
+                        bool(base_version.get("approval_required", True)),
                         "user_edit",
                     ),
                 )
                 row = cursor.fetchone()
+                cursor.execute(
+                    """
+                    UPDATE study_plan
+                    SET current_draft_version_id = %s,
+                        draft_status = 'drafting',
+                        updated_at = now()
+                    WHERE study_id = %s
+                    """,
+                    (row["id"], study_id),
+                )
+                cursor.execute(
+                    """
+                    UPDATE study
+                    SET status = 'planning',
+                        updated_at = now()
+                    WHERE id = %s
+                    """,
+                    (study_id,),
+                )
             connection.commit()
         return self._serialize_record(row)
 

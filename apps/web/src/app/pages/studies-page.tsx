@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router-dom';
 
 import {
   createDemoStudy,
+  getOfflineStudiesSnapshot,
   listStudies,
   startAgent,
   type StudyListItem,
@@ -24,9 +25,13 @@ export function StudiesPage() {
   const [creating, setCreating] = useState(false);
   const [selectorOpen, setSelectorOpen] = useState(false);
 
-  async function load(signal?: AbortSignal) {
-    const studies = await listStudies({ signal });
-    setState({ status: 'ready', studies });
+  async function load(signal?: AbortSignal): Promise<StudyListItem[]> {
+    return Promise.race([
+      listStudies({ signal }),
+      new Promise<StudyListItem[]>((resolve) => {
+        setTimeout(() => resolve(getOfflineStudiesSnapshot()), 8_500);
+      }),
+    ]);
   }
 
   useEffect(() => {
@@ -39,6 +44,9 @@ export function StudiesPage() {
         status: 'error',
         message: error instanceof Error ? error.message : '读取研究列表失败',
       });
+    }).then((studies) => {
+      if (!studies) return;
+      setState({ status: 'ready', studies });
     });
     return () => controller.abort();
   }, []);

@@ -17,15 +17,26 @@ type State =
   | { status: 'ready'; stimuli: StimulusRecord[]; jobs: IngestionJob[]; mappings: DatasetMapping[] }
   | { status: 'error'; message: string };
 
+async function resolveOptional<T>(loader: Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await loader;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error;
+    }
+    return fallback;
+  }
+}
+
 export function StimulusLibraryPage() {
   const [state, setState] = useState<State>({ status: 'loading' });
   const [importing, setImporting] = useState(false);
 
   async function load(signal?: AbortSignal) {
-    const [stimuli, jobs, mappings] = await Promise.all([
-      listStimuli({ signal }),
-      listIngestionJobs({ signal }),
-      listDatasetMappings({ signal }),
+    const stimuli = await listStimuli({ signal });
+    const [jobs, mappings] = await Promise.all([
+      resolveOptional(listIngestionJobs({ signal }), []),
+      resolveOptional(listDatasetMappings({ signal }), []),
     ]);
     setState({ status: 'ready', stimuli, jobs, mappings });
   }

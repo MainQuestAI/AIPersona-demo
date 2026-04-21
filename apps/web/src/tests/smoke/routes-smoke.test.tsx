@@ -16,6 +16,7 @@ describe('route smoke', () => {
     const html = renderRoute('/dashboard');
     expect(html).toContain('业务总览');
     expect(html).toContain('正在加载业务概览');
+    expect(html).toContain('MirrorWorld');
   });
 
   it('renders studies route shell without crashing', () => {

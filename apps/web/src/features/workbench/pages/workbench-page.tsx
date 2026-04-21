@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronDown, Info, Loader2 } from 'lucide-react';
 
 import { buildStudyRoute } from '@/app/services/studyRuntimeViews';
+import { resolveRuntimeApiBase } from '@/app/services/runtimeApiBase';
 import {
   fetchAgentMessages,
   listStudyMemories,
@@ -62,22 +63,30 @@ export function WorkbenchPage({
   // --- Agent messages ---
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [sending, setSending] = useState(false);
+  const [messageLoadError, setMessageLoadError] = useState<string | null>(null);
   const lastIdRef = useRef<string | undefined>(undefined);
 
   // Initial load + polling
   useEffect(() => {
     let active = true;
+    setMessages([]);
+    setMessageLoadError(null);
+    lastIdRef.current = undefined;
 
     async function poll() {
       try {
         const { messages: newMsgs } = await fetchAgentMessages(studyId, lastIdRef.current);
         if (!active) return;
+        setMessageLoadError(null);
         if (newMsgs.length > 0) {
           setMessages((prev) => [...prev, ...newMsgs]);
           lastIdRef.current = newMsgs[newMsgs.length - 1].id;
         }
-      } catch {
-        // ignore polling errors
+      } catch (error) {
+        if (!active) return;
+        setMessageLoadError(
+          error instanceof Error ? error.message : '研究会话加载失败，请稍后重试。',
+        );
       }
     }
 
@@ -112,28 +121,28 @@ export function WorkbenchPage({
 
   // --- Handlers ---
 
-  async function handleAction(actionId: string, action: string) {
+  async function handleAction(actionId: string, action: string, actionLabel?: string) {
     // Handle frontend-only actions
-    if (action === '查看计划详情') { setDetailsOpen(true); return; }
-    if (action === '查看详细对比') { navigate(buildStudyRoute('/compare', studyId)); return; }
-    if (action === '查看研究回放') { openReplay(); return; }
-    if (action === '调整配置') { setTwinSelectorOpen(true); return; }
-    if (action === '下载报告') {
+    if (action === 'show_plan_details') { setDetailsOpen(true); return; }
+    if (action === 'open_compare') { navigate(buildStudyRoute('/compare', studyId)); return; }
+    if (action === 'open_replay') { openReplay(); return; }
+    if (action === 'edit_plan') { setTwinSelectorOpen(true); return; }
+    if (action === 'open_report') {
       const hasReport = projection.artifacts?.some((a) => a.artifact_type === 'report' && a.status === 'ready');
       if (hasReport) {
-        const base = (import.meta.env.VITE_STUDY_RUNTIME_API_URL || 'http://127.0.0.1:8000') as string;
+        const base = resolveRuntimeApiBase();
         window.open(`${base}/studies/${encodeURIComponent(studyId)}/report`, '_blank');
       }
       return;
     }
 
     // Delegate to onCardAction for legacy actions
-    onCardAction?.(action);
+    onCardAction?.(actionLabel ?? action);
 
     // Send to agent
     setSending(true);
     try {
-      await postAgentReply(studyId, { action_id: actionId, action });
+      await postAgentReply(studyId, { action_id: actionId, action, action_label: actionLabel });
     } finally {
       setSending(false);
     }
@@ -165,7 +174,7 @@ export function WorkbenchPage({
   const STATUS_LABELS: Record<string, string> = {
     draft: '草稿', planning: '计划中', pending_approval: '待审批',
     approved: '已审批', queued: '排队中', running: '执行中',
-    awaiting_midrun_approval: '待中途审核', succeeded: '已完成',
+    awaiting_midrun_approval: '待中途审核', paused_for_adjustment: '待调整', succeeded: '已完成',
     failed: '执行异常', completed: '已完成',
   };
   const currentStatus = (rawStatus ? STATUS_LABELS[rawStatus] : undefined) ?? rawStatus ?? '未知';
@@ -178,6 +187,7 @@ export function WorkbenchPage({
     runStatus === 'running' ||
     runStatus === 'queued' ||
     runStatus === 'awaiting_midrun_approval' ||
+    runStatus === 'paused_for_adjustment' ||
     runStatus === 'succeeded' ||
     projection.study.status === 'completed' ||
     projection.study.status === 'running';
@@ -187,7 +197,7 @@ export function WorkbenchPage({
   }));
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-full flex-col">
       {/* Compact Header Bar */}
       <div className="flex-none border-b border-line pb-3">
         <div className="flex items-center justify-between gap-4">
@@ -300,6 +310,15 @@ export function WorkbenchPage({
                 sending={sending}
                 onAction={handleAction}
               />
+            ) : messageLoadError ? (
+              <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
+                <div className="glass-panel glass-panel--danger max-w-sm p-6">
+                  <div className="eyebrow mb-2 text-danger">会话加载失败</div>
+                  <p className="text-sm text-muted">
+                    {messageLoadError}
+                  </p>
+                </div>
+              </div>
             ) : isActiveStudy ? (
               // Study is running/completed but no agent messages yet.
               // Show a status-consistent placeholder — do NOT render ConversationThread
@@ -377,6 +396,7 @@ export function WorkbenchPage({
             await postAgentReply(studyId, {
               action_id: 'edit_plan',
               action: JSON.stringify({ twin_version_ids: ids }),
+              action_label: '调整配置',
             });
           } finally {
             setSending(false);

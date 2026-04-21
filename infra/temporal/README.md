@@ -1,17 +1,23 @@
 # Temporal 本地启动
 
-这个目录提供 AIpersona demo 的本地 Temporal 开发环境。
+当前默认开发方案下，Temporal 不再是必开组件。
+
+如果你只是跑现在的主开发链路：
+
+`web + api + worker + postgres`
+
+可以先不启动 Temporal。
 
 ## 启动
 
 ```bash
-docker compose -f infra/temporal/docker-compose.yml up -d
+pnpm run dev:temporal
 ```
 
 ## 停止
 
 ```bash
-docker compose -f infra/temporal/docker-compose.yml down
+pnpm run dev:down
 ```
 
 ## 访问
@@ -21,5 +27,5 @@ docker compose -f infra/temporal/docker-compose.yml down
 
 ## 说明
 
-这里使用的是 Temporal 的开发模式，目标只有一个：让 API 和 Worker 在本地有稳定的运行时底座可接。
-
+这里只保留 Runtime-first 演进预留。
+当前项目主执行链已经切到 `LangGraph + Postgres checkpointer`，所以 Temporal 是可选开发组件，不是默认开发前置。

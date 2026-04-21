@@ -32,49 +32,40 @@ class LangGraphStudyGateway:
         def _run() -> None:
             try:
                 from worker.graph.runner import start_research
-                start_research(study_id, run_id)
+
+                start_research(study_id, run_id, database_url=db_url)
             except Exception:
                 logger.exception("langgraph_start_failed run=%s", run_id)
-                _mark_run_failed(run_id, study_id, db_url)
+                _mark_run_failed(run_id, study_id, db_url, "研究启动失败，请检查系统日志或重新开始。")
 
         thread = Thread(target=_run, daemon=True, name=f"langgraph-{run_id}")
         thread.start()
 
         return {"workflow_id": workflow_id, "workflow_run_id": None}
 
-    def resume_study_run(self, workflow_id: str, approved_by: str, decision_comment: str | None) -> None:
+    def resume_study_run(self, workflow_id: str, approved_by: str, action: str, decision_comment: str | None) -> None:
         """Resume a paused research graph after human review."""
         run_id = workflow_id.replace("langgraph-", "").replace("agent-run-", "").replace("study-run-", "")
 
         def _run() -> None:
             try:
                 from worker.graph.runner import resume_research
-                resume_research(run_id, approved_by, decision_comment)
+
+                resume_research(run_id, approved_by, action, decision_comment, self._database_url)
             except Exception:
                 logger.exception("langgraph_resume_failed run=%s", run_id)
+                _mark_run_failed(run_id, "", self._database_url, "研究恢复失败，请检查系统日志或重新开始。")
 
         thread = Thread(target=_run, daemon=True, name=f"langgraph-resume-{run_id}")
         thread.start()
 
 
-def _mark_run_failed(run_id: str, study_id: str, database_url: str) -> None:
+def _mark_run_failed(run_id: str, study_id: str, database_url: str, message: str) -> None:
     """Mark a run as failed and notify frontend when gateway-level error occurs."""
     try:
-        import psycopg
-        from psycopg.rows import dict_row
-        from psycopg.types.json import Json
-        with psycopg.connect(database_url, row_factory=dict_row) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE study_run SET status='failed', updated_at=now() WHERE id=%s",
-                    (run_id,),
-                )
-                cur.execute(
-                    "INSERT INTO study_message (study_id, role, content, message_type, metadata_json) "
-                    "VALUES (%s, 'agent', '研究启动失败，请检查系统日志或重新开始。', 'error', %s)",
-                    (study_id, Json({})),
-                )
-            conn.commit()
+        from worker.graph.failure import mark_run_failed
+
+        mark_run_failed(study_id=study_id, run_id=run_id, error_message=message, database_url=database_url)
     except Exception:
         logger.exception("mark_run_failed_error run=%s", run_id)
 

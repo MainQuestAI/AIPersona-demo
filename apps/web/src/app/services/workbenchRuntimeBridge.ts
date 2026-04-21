@@ -69,6 +69,9 @@ function getRuntimePhase(projection: WorkbenchProjection): RuntimePhase {
   if (runStatus === 'awaiting_midrun_approval') {
     return 'awaiting_midrun_review';
   }
+  if (runStatus === 'paused_for_adjustment') {
+    return 'awaiting_midrun_review';
+  }
   if (runStatus === 'failed') {
     return 'rerun_suggested';
   }

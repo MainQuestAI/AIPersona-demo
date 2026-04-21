@@ -1,0 +1,106 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aipersona_demo}
+      POSTGRES_USER: ${POSTGRES_USER:-aipersona}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aipersona_dev}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aipersona} -d ${POSTGRES_DB:-aipersona_demo}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/python-dev.Dockerfile
+    working_dir: /workspace
+    environment:
+      APP_NAME: ${APP_NAME:-aipersona-api}
+      APP_VERSION: ${APP_VERSION:-0.1.0}
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      API_HOST: 0.0.0.0
+      API_PORT: ${API_PORT:-8000}
+      API_RELOAD: ${API_RELOAD:-true}
+      API_KEY_REQUIRED: ${API_KEY_REQUIRED:-false}
+      DEV_AUTH_FALLBACK: ${DEV_AUTH_FALLBACK:-true}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-aipersona}:${POSTGRES_PASSWORD:-aipersona_dev}@postgres:5432/${POSTGRES_DB:-aipersona_demo}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      DASHSCOPE_MODEL: ${DASHSCOPE_MODEL:-qwen-plus}
+      DASHSCOPE_INPUT_COST_PER_1K: ${DASHSCOPE_INPUT_COST_PER_1K:-0}
+      DASHSCOPE_OUTPUT_COST_PER_1K: ${DASHSCOPE_OUTPUT_COST_PER_1K:-0}
+      PYTHONPATH: /workspace/apps/api/src:/workspace/apps/worker/src:/workspace/apps/mcp/src
+    command: ["python", "-m", "app.main"]
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./apps/api:/workspace/apps/api
+      - ./apps/worker:/workspace/apps/worker
+      - ./apps/mcp:/workspace/apps/mcp
+      - ./infra/sql:/workspace/infra/sql
+      - ./scripts:/workspace/scripts
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/python-dev.Dockerfile
+    working_dir: /workspace
+    environment:
+      WORKER_APP_NAME: ${WORKER_APP_NAME:-aipersona-worker}
+      APP_VERSION: ${APP_VERSION:-0.1.0}
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-aipersona}:${POSTGRES_PASSWORD:-aipersona_dev}@postgres:5432/${POSTGRES_DB:-aipersona_demo}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      DASHSCOPE_MODEL: ${DASHSCOPE_MODEL:-qwen-plus}
+      PYTHONPATH: /workspace/apps/worker/src:/workspace/apps/api/src:/workspace/apps/mcp/src
+    command: ["python", "-m", "worker.main"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./apps/api:/workspace/apps/api
+      - ./apps/worker:/workspace/apps/worker
+      - ./apps/mcp:/workspace/apps/mcp
+      - ./infra/sql:/workspace/infra/sql
+      - ./scripts:/workspace/scripts
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/node-dev.Dockerfile
+    working_dir: /workspace
+    environment:
+      CHOKIDAR_USEPOLLING: ${CHOKIDAR_USEPOLLING:-true}
+      VITE_STUDY_RUNTIME_API_URL: ${VITE_STUDY_RUNTIME_API_URL:-http://127.0.0.1:8000}
+    command: ["pnpm", "--filter", "web", "dev"]
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+    volumes:
+      - ./apps/web:/workspace/apps/web
+      - ./packages:/workspace/packages
+      - ./package.json:/workspace/package.json
+      - ./pnpm-lock.yaml:/workspace/pnpm-lock.yaml
+      - ./pnpm-workspace.yaml:/workspace/pnpm-workspace.yaml
+
+  temporal:
+    profiles: ["temporal"]
+    image: temporalio/temporal:latest
+    command: ["server", "start-dev", "--ip", "0.0.0.0"]
+    ports:
+      - "7233:7233"
+      - "8233:8233"
+
+volumes:
+  postgres-data:

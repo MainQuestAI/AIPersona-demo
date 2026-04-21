@@ -57,10 +57,24 @@ function ActionRequestMessage({
   onAction,
 }: {
   message: AgentMessage;
-  onAction: (actionId: string, action: string) => void;
+  onAction: (actionId: string, actionValue: string, actionLabel?: string) => void;
 }) {
   const meta = message.metadata_json as Record<string, unknown>;
-  const actions = Array.isArray(meta.actions) ? meta.actions.map(String) : [];
+  const actions = Array.isArray(meta.actions)
+    ? meta.actions.map((action) => {
+      if (typeof action === 'string') {
+        return { label: action, value: action };
+      }
+      if (action && typeof action === 'object') {
+        const record = action as Record<string, unknown>;
+        return {
+          label: String(record.label ?? record.value ?? ''),
+          value: String(record.value ?? record.label ?? ''),
+        };
+      }
+      return { label: '', value: '' };
+    }).filter((action) => action.label && action.value)
+    : [];
   const actionId = String(meta.action_id ?? '');
 
   return (
@@ -72,12 +86,12 @@ function ActionRequestMessage({
         <div className="mt-3 flex flex-wrap gap-2">
           {actions.map((action, i) => (
             <button
-              key={action}
+              key={action.value}
               type="button"
-              onClick={() => onAction(actionId, action)}
+              onClick={() => onAction(actionId, action.value, action.label)}
               className={i === 0 ? 'btn-primary' : 'btn-secondary'}
             >
-              {action}
+              {action.label}
             </button>
           ))}
         </div>
@@ -116,7 +130,7 @@ function ErrorMessage({ message }: { message: AgentMessage }) {
 
 function renderAgentMessage(
   message: AgentMessage,
-  onAction: (actionId: string, action: string) => void,
+  onAction: (actionId: string, actionValue: string, actionLabel?: string) => void,
 ) {
   switch (message.message_type) {
     case 'progress':
@@ -140,7 +154,7 @@ export function AgentConversation({
 }: {
   messages: AgentMessage[];
   sending?: boolean;
-  onAction: (actionId: string, action: string) => void;
+  onAction: (actionId: string, actionValue: string, actionLabel?: string) => void;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -149,7 +163,7 @@ export function AgentConversation({
   }, [messages.length]);
 
   return (
-    <section className="space-y-0">
+    <section className="flex min-h-full flex-col justify-end">
       {messages.map((message, index) => {
         const isNew = index === messages.length - 1;
 

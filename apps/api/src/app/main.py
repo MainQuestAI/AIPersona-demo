@@ -1,5 +1,4 @@
 from contextlib import asynccontextmanager
-import hashlib
 import logging
 import sys
 
@@ -9,6 +8,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.router import api_router
+from app.core.auth import (
+    AuthUnavailableError,
+    InvalidCredentialsError,
+    MissingCredentialsError,
+    resolve_auth_context,
+)
 from app.core.config import get_settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging
@@ -43,13 +48,15 @@ async def lifespan(app: FastAPI):
     logger.info("api_stopping", extra={"service": settings.service_name})
 
 
-# Paths that do NOT require API key authentication (public endpoints)
-PUBLIC_PATH_PREFIXES = (
-    "/studies/",  # share, replay, report are under studies but checked below
+PUBLIC_PATHS = {
+    "/",
+    "/auth/login",
+    "/auth/register",
     "/docs",
     "/openapi.json",
     "/health",
-)
+    "/healthz",
+}
 PUBLIC_PATH_SUFFIXES = (
     "/share",
     "/replay",
@@ -57,65 +64,48 @@ PUBLIC_PATH_SUFFIXES = (
 )
 
 
-class ApiKeyMiddleware(BaseHTTPMiddleware):
-    """Optional API key gate. When api_key_required=True in settings, all non-public
-    endpoints require a valid X-API-Key header."""
+class AuthMiddleware(BaseHTTPMiddleware):
+    """Protect non-public endpoints with either Bearer session or API key auth."""
 
     async def dispatch(self, request: Request, call_next):  # type: ignore[override]
         settings = request.app.state.settings
-        if not getattr(settings, "api_key_required", False):
-            return await call_next(request)
-
         path = request.url.path
 
-        # Allow public endpoints
         if any(path.endswith(s) for s in PUBLIC_PATH_SUFFIXES):
             return await call_next(request)
-        if path in ("/", "/docs", "/openapi.json", "/health"):
+        if path in PUBLIC_PATHS:
             return await call_next(request)
         if request.method == "OPTIONS":
             return await call_next(request)
 
-        api_key = request.headers.get("X-API-Key", "")
-        if not api_key:
+        try:
+            auth_context = resolve_auth_context(
+                database_url=settings.database_url,
+                authorization=request.headers.get("Authorization"),
+                api_key=request.headers.get("X-API-Key"),
+            )
+        except MissingCredentialsError:
             return Response(
-                content='{"detail":"Missing API key. Set X-API-Key header."}',
+                content='{"detail":"Authentication required. Set Authorization: Bearer <token> or X-API-Key."}',
                 status_code=401,
                 media_type="application/json",
             )
+        except InvalidCredentialsError:
+            return Response(
+                content='{"detail":"Invalid authentication credentials."}',
+                status_code=403,
+                media_type="application/json",
+            )
+        except AuthUnavailableError as exc:
+            logger.warning("auth_unavailable path=%s error=%s", path, exc)
+            return Response(
+                content='{"detail":"Authentication service unavailable.","code":"auth_unavailable"}',
+                status_code=503,
+                media_type="application/json",
+            )
 
-        # Validate key against database
-        key_hash = hashlib.sha256(api_key.encode()).hexdigest()
-        try:
-            from app.core.config import get_settings as _gs
-            import psycopg
-            from psycopg.rows import dict_row
-            s = _gs()
-            with psycopg.connect(s.database_url, row_factory=dict_row) as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT id FROM api_key WHERE key_hash=%s AND is_active=true "
-                        "AND (expires_at IS NULL OR expires_at > now())",
-                        (key_hash,),
-                    )
-                    row = cur.fetchone()
-                    if row:
-                        cur.execute(
-                            "UPDATE api_key SET last_used_at=now() WHERE id=%s",
-                            (row["id"],),
-                        )
-                conn.commit()
-            if not row:
-                return Response(
-                    content='{"detail":"Invalid API key."}',
-                    status_code=403,
-                    media_type="application/json",
-                )
-        except Exception as exc:
-            logger.warning("api_key_check_error: %s", exc)
-            # If api_key table doesn't exist yet, allow through
-            pass
-
+        request.state.auth_context = auth_context
+        request.state.current_user = auth_context.user
         return await call_next(request)
 
 
@@ -136,7 +126,7 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["*"],
     )
-    app.add_middleware(ApiKeyMiddleware)
+    app.add_middleware(AuthMiddleware)
     register_error_handlers(app)
     app.include_router(api_router)
     return app

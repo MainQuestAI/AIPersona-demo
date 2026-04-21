@@ -23,7 +23,7 @@ def after_human_review(
 ) -> Literal["run_scoring", "run_interview"]:
     """After human review, decide whether to proceed to scoring or adjust."""
     action = state.get("human_action", "continue")
-    if action in ("adjust", "调整方向探索"):
+    if action in ("adjust", "adjust_direction", "调整方向探索"):
         # User wants to adjust — go back to more interviews
         return "run_interview"
     return "run_scoring"
@@ -36,5 +36,4 @@ def confidence_route(
     if state.get("confidence_sufficient", True):
         return "generate_recommendation"
     return "human_review"
-
 

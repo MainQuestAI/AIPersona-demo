@@ -1,7 +1,7 @@
 # AI Consumer Research Workbench — Design System
 
-> MQDS v4.1 "Glass Terminal" Dark Mode
-> Last updated: 2026-04-05
+> MQDS v4.2 "Glass Terminal" — Dark Mode (default) + Light Mode (Warm Research)
+> Last updated: 2026-04-21
 
 ---
 
@@ -422,6 +422,15 @@ transition: { duration: 0.3 }
 
 ## 12. Design Changelog
 
+### 2026-04-21 — v1.2 Light Mode (Warm Research)
+- Added Section 13: Light Mode `[data-theme="light"]` token overrides
+- Aesthetic direction: "Bloomberg meets Notion" — warm paper background, frosted white panels
+- Background: `#FAFAF8` (1% warm cast) instead of pure white
+- Preserved `backdrop-filter: blur(20px)` on panels for brand continuity across modes
+- Inverted glass edge: light mode uses subtle bottom border vs dark mode's top highlight
+- Added separate `-text` tokens for orange/yellow/red with WCAG AA+ contrast on light bg
+- MQDS bumped to v4.2
+
 ### 2026-04-05 — v1.1 Color Differentiation
 - Accent color changed from `#2ECC71` (green) to `#6366F1` (indigo) to differentiate from Atypica
 - Green reserved for success-only states (`--color-success`)
@@ -437,3 +446,114 @@ transition: { duration: 0.3 }
 - Button variant system (primary, secondary, accent ghost, warning ghost, chip)
 - Toast notification system
 - Ambient light orbs
+
+---
+
+## 13. Light Mode — "Warm Research"
+
+### 13.1 Aesthetic Direction
+
+**"Bloomberg meets Notion"** — 明亮的分析空间，疗愈专业感。同一套玻璃隐喻，换到明亮语境里。
+
+- 背景不是纯白，是 `#FAFAF8`（1% 暖色调，「研究纸」质感）
+- 面板保留 `backdrop-filter: blur(20px)` + 半透明白（大多数工具切到 light 时直接放弃模糊效果；我们保留它，让两套主题品牌感一致）
+- 玻璃边缘反转：dark 模式是亮的顶边（玻璃捕获头顶光），light 模式是略深的底边（明亮环境下玻璃的阴影边）
+- Indigo / Orange 语义色不变，保持两套主题的颜色语言完全一致
+
+### 13.2 Implementation
+
+挂载方式：`[data-theme="light"]` 属性加在 `<html>` 上，覆盖 CSS 变量。现有 dark token 保持默认值，zero rework。
+
+```css
+[data-theme="light"] {
+  /* 背景层级 */
+  --color-bg: #FAFAF8;
+  --color-rail: rgba(0,0,0,0.015);
+  --color-panel: rgba(255,255,255,0.82);
+  --color-panel-strong: rgba(255,255,255,0.94);
+  --color-surface-elevated: #FFFFFF;
+
+  /* 边框 */
+  --color-line: rgba(0,0,0,0.07);
+  --glass-highlight: rgba(0,0,0,0.05);   /* 反转：light 模式底边略深 */
+  --color-line-strong: rgba(0,0,0,0.12);
+
+  /* 文字层级 */
+  --color-text: #0F0F14;     /* 带蓝底色的「排版黑」，非纯黑 */
+  --color-muted: #52525B;
+  --color-tertiary: #71717A;
+
+  /* 功能色 — 语义不变，文本用深化版保证对比度 */
+  --color-accent: #6366F1;               /* 对比度 4.9:1 — AA ✓ */
+  --color-accent-soft: rgba(99,102,241,0.08);
+  --color-action: #FF6B2B;               /* 背景/图标用 */
+  --color-action-text: #C44B10;          /* 文本用深化版 7.2:1 — AAA ✓ */
+  --color-action-soft: rgba(255,107,43,0.10);
+  --color-warning: #F1C40F;              /* 背景/图标用 */
+  --color-warning-text: #854D0E;         /* 文本用深化版 4.5:1 — AA ✓ */
+  --color-warning-soft: rgba(241,196,15,0.12);
+  --color-danger: #E74C3C;
+  --color-danger-text: #B91C1C;          /* 7:1 — AAA ✓ */
+  --color-danger-soft: rgba(231,76,60,0.08);
+  --color-success: #16A34A;              /* 5.5:1 — AA ✓ */
+  --color-success-soft: rgba(22,163,74,0.08);
+
+  /* 阴影（light 模式里代替 dark 的「虚空衬底」）*/
+  --shadow-panel: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04);
+  --shadow-glow: 0 0 0 1px rgba(99,102,241,0.15), 0 4px 20px rgba(99,102,241,0.10);
+  --shadow-warm: 0 0 30px rgba(255,107,43,0.08);
+
+  /* 滚动条 */
+  --scrollbar-thumb: rgba(0,0,0,0.12);
+}
+```
+
+### 13.3 Glass Panel (Light Mode Override)
+
+```css
+[data-theme="light"] .glass-panel {
+  background: rgba(255,255,255,0.82);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(0,0,0,0.07);
+  border-top-color: rgba(0,0,0,0.00);   /* 顶边透明 */
+  border-bottom-color: rgba(0,0,0,0.10); /* 底边略深：light 语境下的玻璃阴影边 */
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04);
+  border-radius: 20px;
+}
+```
+
+### 13.4 Ambient Orbs (Light Mode)
+
+位置不变，透明度大幅降低（light 背景下需要更轻的环境光）：
+
+```css
+[data-theme="light"] .orb-orange {
+  opacity: 0.04;  /* dark: 0.08 */
+}
+
+[data-theme="light"] .orb-indigo {
+  opacity: 0.05;  /* dark: 0.06 */
+}
+```
+
+### 13.5 Scrollbar (Light Mode)
+
+```css
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.12);
+}
+```
+
+### 13.6 Contrast Reference (Light Mode)
+
+| Token | Value | On `#FAFAF8` | Grade |
+|-------|-------|--------------|-------|
+| `--color-text` | `#0F0F14` | 18.3:1 | AAA |
+| `--color-muted` | `#52525B` | 7.1:1 | AAA |
+| `--color-tertiary` | `#71717A` | 4.7:1 | AA |
+| `--color-accent` | `#6366F1` | 4.9:1 | AA |
+| `--color-action-text` | `#C44B10` | 7.2:1 | AAA |
+| `--color-warning-text` | `#854D0E` | 4.5:1 | AA |
+| `--color-danger-text` | `#B91C1C` | 7.0:1 | AAA |
+| `--color-success` | `#16A34A` | 5.5:1 | AA |

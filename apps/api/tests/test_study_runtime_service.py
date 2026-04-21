@@ -10,6 +10,7 @@ from app.study_runtime.service import (
     ApprovalDecision,
     CreateStudyCommand,
     FakeWorkflowGateway,
+    ResumeRunCommand,
     StartRunCommand,
     StudyRuntimeService,
     SubmitPlanForApprovalCommand,
@@ -24,6 +25,7 @@ class InMemoryStudyRuntimeRepository:
     approval_gates: dict[str, dict[str, Any]] = field(default_factory=dict)
     study_runs: dict[str, dict[str, Any]] = field(default_factory=dict)
     run_steps: dict[str, dict[str, Any]] = field(default_factory=dict)
+    failed_runs: list[tuple[str, str, str | None]] = field(default_factory=list)
     _counter: int = 0
 
     def _next_id(self, prefix: str) -> str:
@@ -168,11 +170,37 @@ class InMemoryStudyRuntimeRepository:
         run["workflow_id"] = workflow_id
         run["workflow_run_id"] = workflow_run_id
 
+    def fail_run(self, study_id: str, run_id: str, reason: str | None = None) -> None:
+        run = self.study_runs[run_id]
+        run["status"] = "failed"
+        run["failure_reason"] = reason
+        self.failed_runs.append((study_id, run_id, reason))
+
     def get_run(self, study_id: str, run_id: str) -> dict[str, Any] | None:
         run = self.study_runs.get(run_id)
         if run and run["study_id"] == study_id:
             return dict(run)
         return None
+
+
+class RaisingWorkflowGateway(FakeWorkflowGateway):
+    def start_study_run(self, run_id: str, study_id: str, plan_version_id: str) -> dict[str, str | None]:
+        raise RuntimeError("workflow launch failed")
+
+
+class CapturingWorkflowGateway(FakeWorkflowGateway):
+    def __init__(self) -> None:
+        super().__init__()
+        self.resume_calls: list[tuple[str, str, str, str | None]] = []
+
+    def resume_study_run(self, workflow_id: str, approved_by: str, action: str, decision_comment: str | None) -> None:
+        self.resume_calls.append((workflow_id, approved_by, action, decision_comment))
+        super().resume_study_run(workflow_id, approved_by, action, decision_comment)
+
+
+class BindFailingRepository(InMemoryStudyRuntimeRepository):
+    def bind_workflow(self, run_id: str, workflow_id: str, workflow_run_id: str | None) -> None:
+        raise RuntimeError("workflow binding failed")
 
 
 class StudyRuntimeServiceTests(unittest.TestCase):
@@ -302,6 +330,172 @@ class StudyRuntimeServiceTests(unittest.TestCase):
         self.assertEqual(run["status"], "queued")
         self.assertTrue(run["workflow_id"].startswith("study-run-"))
         self.assertEqual(self.workflow_gateway.started_runs, [run["id"]])
+
+    def test_start_run_marks_run_failed_if_workflow_launch_fails(self) -> None:
+        repository = InMemoryStudyRuntimeRepository()
+        service = StudyRuntimeService(
+            repository=repository,
+            workflow_gateway=RaisingWorkflowGateway(),
+        )
+        created = service.create_study(
+            CreateStudyCommand(
+                business_question="Which concept wins?",
+                study_type="concept_screening",
+                brand="Danone",
+                category="Maternal beverage",
+                target_groups=["Pregnant Women"],
+                business_goal={"objective": "find winner"},
+                twin_version_ids=["twin-v1"],
+                stimulus_ids=["stim-1"],
+                qual_config={"mode": "ai_idi"},
+                quant_config={"mode": "ssr"},
+                generated_by="boss",
+            )
+        )
+        study_id = created["study"]["id"]
+        version_id = created["study_plan_version"]["id"]
+        service.submit_plan_for_approval(
+            SubmitPlanForApprovalCommand(
+                study_id=study_id,
+                study_plan_version_id=version_id,
+                requested_by="boss",
+            )
+        )
+        service.approve_plan(
+            ApprovalDecision(
+                study_id=study_id,
+                study_plan_version_id=version_id,
+                approved_by="boss",
+            )
+        )
+
+        with self.assertRaises(AppError):
+            service.start_run(
+                StartRunCommand(
+                    study_id=study_id,
+                    study_plan_version_id=version_id,
+                    requested_by="boss",
+                )
+            )
+
+        self.assertEqual(len(repository.failed_runs), 1)
+        failed_study_id, failed_run_id, reason = repository.failed_runs[0]
+        self.assertEqual(failed_study_id, study_id)
+        self.assertEqual(repository.study_runs[failed_run_id]["status"], "failed")
+        self.assertEqual(reason, "workflow launch failed")
+
+    def test_start_run_marks_run_failed_if_binding_workflow_fails(self) -> None:
+        repository = BindFailingRepository()
+        service = StudyRuntimeService(
+            repository=repository,
+            workflow_gateway=FakeWorkflowGateway(),
+        )
+        created = service.create_study(
+            CreateStudyCommand(
+                business_question="Which concept wins?",
+                study_type="concept_screening",
+                brand="Danone",
+                category="Maternal beverage",
+                target_groups=["Pregnant Women"],
+                business_goal={"objective": "find winner"},
+                twin_version_ids=["twin-v1"],
+                stimulus_ids=["stim-1"],
+                qual_config={"mode": "ai_idi"},
+                quant_config={"mode": "ssr"},
+                generated_by="boss",
+            )
+        )
+        study_id = created["study"]["id"]
+        version_id = created["study_plan_version"]["id"]
+        service.submit_plan_for_approval(
+            SubmitPlanForApprovalCommand(
+                study_id=study_id,
+                study_plan_version_id=version_id,
+                requested_by="boss",
+            )
+        )
+        service.approve_plan(
+            ApprovalDecision(
+                study_id=study_id,
+                study_plan_version_id=version_id,
+                approved_by="boss",
+            )
+        )
+
+        with self.assertRaises(AppError):
+            service.start_run(
+                StartRunCommand(
+                    study_id=study_id,
+                    study_plan_version_id=version_id,
+                    requested_by="boss",
+                )
+            )
+
+        self.assertEqual(len(repository.failed_runs), 1)
+        failed_study_id, failed_run_id, reason = repository.failed_runs[0]
+        self.assertEqual(failed_study_id, study_id)
+        self.assertEqual(repository.study_runs[failed_run_id]["status"], "failed")
+        self.assertEqual(reason, "workflow binding failed")
+
+    def test_resume_run_forwards_canonical_action_to_workflow_gateway(self) -> None:
+        workflow_gateway = CapturingWorkflowGateway()
+        service = StudyRuntimeService(
+            repository=InMemoryStudyRuntimeRepository(),
+            workflow_gateway=workflow_gateway,
+        )
+        created = service.create_study(
+            CreateStudyCommand(
+                business_question="Which concept wins?",
+                study_type="concept_screening",
+                brand="Danone",
+                category="Maternal beverage",
+                target_groups=["Pregnant Women"],
+                business_goal={"objective": "find winner"},
+                twin_version_ids=["twin-v1"],
+                stimulus_ids=["stim-1"],
+                qual_config={"mode": "ai_idi"},
+                quant_config={"mode": "ssr"},
+                generated_by="boss",
+            )
+        )
+        study_id = created["study"]["id"]
+        version_id = created["study_plan_version"]["id"]
+        service.submit_plan_for_approval(
+            SubmitPlanForApprovalCommand(
+                study_id=study_id,
+                study_plan_version_id=version_id,
+                requested_by="boss",
+            )
+        )
+        service.approve_plan(
+            ApprovalDecision(
+                study_id=study_id,
+                study_plan_version_id=version_id,
+                approved_by="boss",
+            )
+        )
+        run = service.start_run(
+            StartRunCommand(
+                study_id=study_id,
+                study_plan_version_id=version_id,
+                requested_by="boss",
+            )
+        )
+
+        service.resume_run(
+            ResumeRunCommand(
+                study_id=study_id,
+                study_run_id=run["id"],
+                approved_by="boss",
+                action="adjust_direction",
+                decision_comment="请继续做更多访谈",
+            )
+        )
+
+        self.assertEqual(
+            workflow_gateway.resume_calls,
+            [(run["workflow_id"], "boss", "adjust_direction", "请继续做更多访谈")],
+        )
 
 
 if __name__ == "__main__":

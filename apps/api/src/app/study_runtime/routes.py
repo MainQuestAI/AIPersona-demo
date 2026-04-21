@@ -16,6 +16,13 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
+from app.core.auth import (
+    SessionUser,
+    build_development_auth_response,
+    connect_auth_database,
+    create_session_token,
+    development_auth_enabled,
+)
 from app.study_runtime.projections import build_workbench_projection
 from app.study_runtime.streaming import create_llm_stream, model_supports_thinking
 from app.study_runtime.gateway import LangGraphStudyGateway
@@ -32,6 +39,30 @@ from app.study_runtime.service import (
 
 
 router = APIRouter(tags=["study-runtime"])
+
+
+def _action(label: str, value: str) -> dict[str, str]:
+    return {"label": label, "value": value}
+
+
+def _current_user(request: Request) -> SessionUser:
+    user = getattr(request.state, "current_user", None)
+    if user is None:
+        raise HTTPException(status_code=401, detail="需要登录后才能执行该操作")
+    return user
+
+
+def _build_unique_team_slug(cursor: Any, team_name: str) -> str:
+    base_slug = team_name.lower().replace(" ", "-")[:50] or "team"
+    slug = base_slug
+    suffix = 1
+    while True:
+        cursor.execute("SELECT 1 FROM team WHERE slug=%s", (slug,))
+        if cursor.fetchone() is None:
+            return slug
+        suffix += 1
+        trimmed = base_slug[: max(1, 50 - len(f"-{suffix}"))]
+        slug = f"{trimmed}-{suffix}"
 
 
 class CreateStudyRequest(BaseModel):
@@ -55,6 +86,7 @@ class CreateStudyRequest(BaseModel):
 
 class DecisionRequest(BaseModel):
     actor: str
+    action: str = "continue"
     decision_comment: Optional[str] = None
 
 
@@ -193,6 +225,7 @@ async def resume_run(
             study_id=study_id,
             study_run_id=run_id,
             approved_by=payload.actor,
+            action=payload.action,
             decision_comment=payload.decision_comment,
         )
     )
@@ -957,6 +990,7 @@ async def get_agent_messages(
 class AgentReplyRequest(BaseModel):
     action_id: str = ""
     action: str = Field(min_length=1, max_length=4000)
+    action_label: Optional[str] = None
     comment: Optional[str] = None
 
 
@@ -970,9 +1004,17 @@ async def reply_to_agent(
     """User replies to an agent action_request or sends a free-form message."""
     # Write user message
     service.repository.create_study_message(
-        study_id, "user", payload.action,
+        study_id, "user", payload.action_label or payload.action,
         message_type="action_response" if payload.action_id else "text",
-        metadata={"action_id": payload.action_id} if payload.action_id else {},
+        metadata=(
+            {
+                "action_id": payload.action_id,
+                "action_value": payload.action,
+                "action_label": payload.action_label,
+            }
+            if payload.action_id
+            else {}
+        ),
     )
 
     bundle = service.get_study_bundle(study_id)
@@ -983,7 +1025,7 @@ async def reply_to_agent(
             break
 
     # Handle action-based replies
-    if payload.action_id == "confirm_plan":
+    if payload.action_id == "confirm_plan" and payload.action == "confirm_plan":
         # Idempotency: if a run already exists (running/queued/awaiting), return it
         existing_runs = bundle.get("study_runs", [])
         for existing_run in existing_runs:
@@ -1052,17 +1094,44 @@ async def reply_to_agent(
             f"**访谈场次**：{total_idi}\n\n"
             f"请确认后开始执行。",
             message_type="action_request",
-            metadata={"actions": ["开始执行", "调整配置"], "action_id": "confirm_plan", "plan_version_id": new_v_id},
+            metadata={
+                "actions": [
+                    _action("开始执行", "confirm_plan"),
+                    _action("调整配置", "edit_plan"),
+                ],
+                "action_id": "confirm_plan",
+                "plan_version_id": new_v_id,
+            },
         )
         return {"status": "plan_updated", "plan_version_id": new_v_id}
 
     if payload.action_id == "midrun_review" and current_run:
+        if payload.action == "pause_adjustment":
+            paused_run = service.repository.pause_run_for_adjustment(
+                study_id=study_id,
+                run_id=str(current_run["id"]),
+                actor="boss",
+                decision_comment=payload.comment or payload.action_label or payload.action,
+            )
+            service.repository.create_study_message(
+                study_id,
+                "agent",
+                "已暂停当前研究执行。请先调整目标人群或刺激物配置，确认后再重新开始。",
+                message_type="action_request",
+                metadata={
+                    "action_id": "confirm_plan",
+                    "actions": [_action("调整配置", "edit_plan")],
+                    "run_id": str(current_run["id"]),
+                },
+            )
+            return {"status": "paused", "run_id": str(paused_run.get("id", ""))}
         workflow_id = current_run.get("workflow_id")
         if workflow_id:
             service.gateway.resume_study_run(
                 workflow_id=workflow_id,
                 approved_by="boss",
-                decision_comment=payload.comment or payload.action,
+                action=payload.action,
+                decision_comment=payload.comment or payload.action_label or payload.action,
             )
             return {"status": "resumed"}
 
@@ -1193,7 +1262,14 @@ async def start_agent(
         f"{memory_section}\n\n"
         f"请确认后开始执行。",
         message_type="action_request",
-        metadata={"actions": ["开始执行", "调整配置"], "action_id": "confirm_plan", "plan_version_id": v_id},
+        metadata={
+            "actions": [
+                _action("开始执行", "confirm_plan"),
+                _action("调整配置", "edit_plan"),
+            ],
+            "action_id": "confirm_plan",
+            "plan_version_id": v_id,
+        },
     )
 
     return {"status": "plan_presented", "plan_version_id": v_id}
@@ -1220,11 +1296,9 @@ async def create_api_key(
 
     try:
         from psycopg.types.json import Json
-        import psycopg
-        from psycopg.rows import dict_row
         from app.core.config import get_settings
         settings = get_settings()
-        with psycopg.connect(settings.database_url, row_factory=dict_row) as conn:
+        with connect_auth_database(settings.database_url) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     "INSERT INTO api_key (key_hash, key_prefix, owner, scope) "
@@ -1252,11 +1326,9 @@ async def list_api_keys(
 ) -> list[dict[str, Any]]:
     """List all API keys (without the raw key)."""
     try:
-        import psycopg
-        from psycopg.rows import dict_row
         from app.core.config import get_settings
         settings = get_settings()
-        with psycopg.connect(settings.database_url, row_factory=dict_row) as conn:
+        with connect_auth_database(settings.database_url) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT id, key_prefix, owner, scope, is_active, created_at, last_used_at "
@@ -1288,16 +1360,11 @@ class LoginRequest(BaseModel):
 async def register_user(payload: RegisterRequest) -> dict[str, Any]:
     """Register a new user and optionally create a team."""
     password_hash = hashlib.pbkdf2_hmac("sha256", payload.password.encode(), b"aipersona-salt-v1", 100_000).hex()
-    # TODO: Token is not persisted — this is a demo placeholder.
-    # For production, store in DB with expiry and validate in auth middleware.
-    token = secrets.token_urlsafe(32)
 
     try:
-        import psycopg
-        from psycopg.rows import dict_row
         from app.core.config import get_settings
         settings = get_settings()
-        with psycopg.connect(settings.database_url, row_factory=dict_row) as conn:
+        with connect_auth_database(settings.database_url) as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT id FROM app_user WHERE email=%s", (payload.email,))
                 if cur.fetchone():
@@ -1310,7 +1377,7 @@ async def register_user(payload: RegisterRequest) -> dict[str, Any]:
                 user = dict(cur.fetchone())
                 team = None
                 if payload.team_name:
-                    slug = payload.team_name.lower().replace(" ", "-")[:50]
+                    slug = _build_unique_team_slug(cur, payload.team_name)
                     cur.execute(
                         "INSERT INTO team (name, slug, owner_id) VALUES (%s, %s, %s) RETURNING id, name, slug",
                         (payload.team_name, slug, user["id"]),
@@ -1321,15 +1388,24 @@ async def register_user(payload: RegisterRequest) -> dict[str, Any]:
                         (team["id"], user["id"]),
                     )
             conn.commit()
+        token, expires_at = create_session_token(database_url=settings.database_url, user_id=str(user["id"]))
         return {
             "user": {k: str(v) for k, v in user.items()},
             "team": {k: str(v) for k, v in team.items()} if team else None,
+            "teams": [{k: str(v) for k, v in team.items()}] if team else [],
             "token": token,
+            "expires_at": expires_at,
         }
     except HTTPException:
         raise
     except Exception as exc:
         logger.warning("register_error: %s", exc)
+        if development_auth_enabled():
+            return build_development_auth_response(
+                email=payload.email,
+                display_name=payload.display_name,
+                team_name=payload.team_name,
+            )
         raise HTTPException(status_code=500, detail="注册失败，请确保已运行 migration 007")
 
 
@@ -1338,11 +1414,9 @@ async def login_user(payload: LoginRequest) -> dict[str, Any]:
     """Login with email and password."""
     password_hash = hashlib.pbkdf2_hmac("sha256", payload.password.encode(), b"aipersona-salt-v1", 100_000).hex()
     try:
-        import psycopg
-        from psycopg.rows import dict_row
         from app.core.config import get_settings
         settings = get_settings()
-        with psycopg.connect(settings.database_url, row_factory=dict_row) as conn:
+        with connect_auth_database(settings.database_url) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT id, email, display_name, role FROM app_user "
@@ -1358,39 +1432,41 @@ async def login_user(payload: LoginRequest) -> dict[str, Any]:
                     (user["id"],),
                 )
                 teams = [dict(row) for row in cur.fetchall()]
-        token = secrets.token_urlsafe(32)
+        token, expires_at = create_session_token(database_url=settings.database_url, user_id=str(user["id"]))
         return {
             "user": {k: str(v) for k, v in dict(user).items()},
             "teams": [{k: str(v) for k, v in t.items()} for t in teams],
             "token": token,
+            "expires_at": expires_at,
         }
     except HTTPException:
         raise
     except Exception as exc:
         logger.warning("login_error: %s", exc)
+        if development_auth_enabled():
+            fallback_name = (payload.email.split("@")[0] if "@" in payload.email else payload.email).strip() or "MirrorWorld Demo"
+            return build_development_auth_response(
+                email=payload.email,
+                display_name=fallback_name,
+            )
         raise HTTPException(status_code=500, detail="登录失败")
 
 
 @router.post("/teams/{team_id}/invite")
 async def invite_team_member(team_id: str, request: Request, payload: RegisterRequest) -> dict[str, Any]:
     """Invite a user to a team (creates account if needed). Requires caller to be a team member."""
-    # Verify caller is a member of this team
-    caller_id = request.headers.get("X-User-Id", "")
-    if not caller_id:
-        raise HTTPException(status_code=401, detail="需要登录后才能邀请成员（缺少 X-User-Id）")
+    caller = _current_user(request)
 
     password_hash = hashlib.pbkdf2_hmac("sha256", payload.password.encode(), b"aipersona-salt-v1", 100_000).hex()
     try:
-        import psycopg
-        from psycopg.rows import dict_row
         from app.core.config import get_settings
         settings = get_settings()
-        with psycopg.connect(settings.database_url, row_factory=dict_row) as conn:
+        with connect_auth_database(settings.database_url) as conn:
             with conn.cursor() as cur:
                 # Check caller is a team member with admin/owner role
                 cur.execute(
                     "SELECT role FROM team_member WHERE team_id=%s AND user_id=%s",
-                    (team_id, caller_id),
+                    (team_id, caller.id),
                 )
                 member = cur.fetchone()
                 if not member or member["role"] not in ("owner", "admin"):

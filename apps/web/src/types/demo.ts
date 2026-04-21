@@ -7,6 +7,7 @@ export type StudyStatus =
   | 'running'
   | 'awaiting_midrun_approval'
   | 'awaiting_midrun_review'
+  | 'paused_for_adjustment'
   | 'completed'
   | 'completed_with_recommendation'
   | 'failed'

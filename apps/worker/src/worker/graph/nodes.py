@@ -36,6 +36,10 @@ from worker.llm import chat_json_with_metadata
 logger = logging.getLogger(__name__)
 
 
+def _action(label: str, value: str) -> dict[str, str]:
+    return {"label": label, "value": value}
+
+
 # ---------------------------------------------------------------------------
 #  Message helper (writes to study_message table for frontend polling)
 # ---------------------------------------------------------------------------
@@ -306,7 +310,14 @@ def request_human_review(state: ResearchState) -> dict[str, Any]:
             f"在访谈中发现了新方向：\n\n{pivot_reason}\n\n"
             "是否调整研究方向继续探索？",
             message_type="action_request",
-            metadata={"actions": ["继续当前方向", "调整方向探索"], "action_id": "midrun_review"},
+            metadata={
+                "actions": [
+                    _action("继续当前方向", "continue"),
+                    _action("调整方向探索", "adjust_direction"),
+                    _action("暂停调整", "pause_adjustment"),
+                ],
+                "action_id": "midrun_review",
+            },
         )
     else:
         twins = state.get("twins", [])
@@ -316,7 +327,14 @@ def request_human_review(state: ResearchState) -> dict[str, Any]:
             f"定性探索已完成，{len(twins)} 个目标人群 × {len(stimuli)} 个刺激物的访谈都已收录。\n\n"
             "是否继续进入 AI 综合评估阶段？",
             message_type="action_request",
-            metadata={"actions": ["继续评估", "暂停调整"], "action_id": "midrun_review"},
+            metadata={
+                "actions": [
+                    _action("继续评估", "continue"),
+                    _action("调整方向探索", "adjust_direction"),
+                    _action("暂停调整", "pause_adjustment"),
+                ],
+                "action_id": "midrun_review",
+            },
         )
 
     # LangGraph interrupt — execution pauses here until resume
@@ -552,7 +570,14 @@ def complete_study(state: ResearchState) -> dict[str, Any]:
         study_id, "agent",
         "研究已完成。你可以继续追问研究细节，或者：",
         message_type="action_request",
-        metadata={"actions": ["下载报告", "查看详细对比", "查看研究回放"], "action_id": "post_study"},
+        metadata={
+            "actions": [
+                _action("下载报告", "open_report"),
+                _action("查看详细对比", "open_compare"),
+                _action("查看研究回放", "open_replay"),
+            ],
+            "action_id": "post_study",
+        },
     )
 
     return {"phase": "complete"}

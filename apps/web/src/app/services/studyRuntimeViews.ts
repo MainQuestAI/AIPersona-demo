@@ -8,6 +8,7 @@ const STATUS_LABELS: Record<string, string> = {
   queued: '排队中',
   running: '执行中',
   awaiting_midrun_approval: '待中途审核',
+  paused_for_adjustment: '待调整',
   succeeded: '已完成',
   failed: '执行异常',
   completed: '已完成',
@@ -131,6 +132,9 @@ export function buildCompareViewModel(
   if (runStatus === 'awaiting_midrun_approval') {
     decisionTitle = '等待中途审核确认';
     decisionBody = '定性阶段已完成，需审核确认后继续进入定量排序。';
+  } else if (runStatus === 'paused_for_adjustment') {
+    decisionTitle = '研究已暂停，等待调整计划';
+    decisionBody = '当前执行已暂停，请先调整目标人群或刺激物配置，再重新启动新的研究执行。';
   } else if (runStatus === 'succeeded') {
     decisionTitle = '研究已完成，可查看结果';
     decisionBody = '全部研究阶段已完成，推荐结论已生成。';

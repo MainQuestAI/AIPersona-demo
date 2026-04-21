@@ -18,6 +18,7 @@ import {
   uploadPersonaPDF,
   type ConsumerTwinRecord,
 } from '../services/studyRuntime';
+import { resolveRuntimeApiBase } from '../services/runtimeApiBase';
 
 type State =
   | { status: 'loading' }
@@ -26,19 +27,18 @@ type State =
 
 type InputMode = 'text' | 'pdf' | 'batch';
 
-const AUDIENCE_FILTERS = [
-  '全部',
-  '孕期女性',
-  '新手妈妈',
-  '职场宝妈',
-  '95后妈妈',
-  '二胎妈妈',
-  '高知妈妈',
-  '小镇妈妈',
-  '全职妈妈',
-  '备孕女性',
-  '哺乳期妈妈',
-] as const;
+function getTwinBrand(
+  profile: Record<string, unknown>,
+  sourceLineage?: Record<string, unknown> | null,
+): string {
+  if (typeof profile.brand_name === 'string' && profile.brand_name.trim()) {
+    return profile.brand_name;
+  }
+  if (sourceLineage && typeof sourceLineage.brand_name === 'string' && sourceLineage.brand_name.trim()) {
+    return sourceLineage.brand_name;
+  }
+  return '未分组品牌';
+}
 
 function PersonaAvatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' | 'lg' }) {
   const hue = [...name].reduce((acc, ch) => acc + ch.charCodeAt(0), 0) % 360;
@@ -112,7 +112,8 @@ export function ConsumerTwinsPage() {
 
   // Search & filter
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState('全部');
+  const [activeBrand, setActiveBrand] = useState('全部');
+  const [activeAudience, setActiveAudience] = useState('全部');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   async function load(signal?: AbortSignal) {
@@ -132,28 +133,53 @@ export function ConsumerTwinsPage() {
     return () => controller.abort();
   }, []);
 
+  const brandFilters = useMemo(() => {
+    if (state.status !== 'ready') return ['全部'];
+    return ['全部', ...new Set(state.twins.map((twin) => getTwinBrand(
+      (twin.persona_profile_snapshot_json ?? {}) as Record<string, unknown>,
+      twin.source_lineage,
+    )).filter(Boolean))];
+  }, [state]);
+
+  const audienceFilters = useMemo(() => {
+    if (state.status !== 'ready') return ['全部'];
+    const scopedTwins = activeBrand === '全部'
+      ? state.twins
+      : state.twins.filter((twin) => getTwinBrand(
+        (twin.persona_profile_snapshot_json ?? {}) as Record<string, unknown>,
+        twin.source_lineage,
+      ) === activeBrand);
+    return ['全部', ...new Set(scopedTwins.map((twin) => String(twin.target_audience_label ?? '')).filter(Boolean))];
+  }, [activeBrand, state]);
+
   const filteredTwins = useMemo(() => {
     if (state.status !== 'ready') return [];
     let result = state.twins;
 
-    // Filter by audience
-    if (activeFilter !== '全部') {
-      result = result.filter((t) => t.target_audience_label === activeFilter);
+    if (activeBrand !== '全部') {
+      result = result.filter((twin) => getTwinBrand(
+        (twin.persona_profile_snapshot_json ?? {}) as Record<string, unknown>,
+        twin.source_lineage,
+      ) === activeBrand);
     }
 
-    // Search by name or audience
+    if (activeAudience !== '全部') {
+      result = result.filter((t) => t.target_audience_label === activeAudience);
+    }
+
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter((t) => {
         const name = String(t.persona_profile_snapshot_json?.name ?? '').toLowerCase();
         const audience = String(t.target_audience_label ?? '').toLowerCase();
         const purpose = String(t.business_purpose ?? '').toLowerCase();
-        return name.includes(q) || audience.includes(q) || purpose.includes(q);
+        const brand = getTwinBrand((t.persona_profile_snapshot_json ?? {}) as Record<string, unknown>, t.source_lineage).toLowerCase();
+        return name.includes(q) || audience.includes(q) || purpose.includes(q) || brand.includes(q);
       });
     }
 
     return result;
-  }, [state, activeFilter, searchQuery]);
+  }, [state, activeBrand, activeAudience, searchQuery]);
 
   async function handleGenerate() {
     if (inputMode === 'pdf') {
@@ -188,7 +214,7 @@ export function ConsumerTwinsPage() {
         return;
       }
       try {
-        const apiBase = (import.meta.env.VITE_STUDY_RUNTIME_API_URL || 'http://127.0.0.1:8000') as string;
+        const apiBase = resolveRuntimeApiBase();
         const resp = await fetch(`${apiBase}/persona-profiles/generate-batch`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -264,7 +290,7 @@ export function ConsumerTwinsPage() {
               Persona 资产库
             </h2>
             <p className="mt-1.5 text-sm leading-7 text-muted">
-              {totalCount} 个消费者画像，覆盖 {new Set(state.twins.map((t) => t.target_audience_label).filter(Boolean)).size} 个目标人群。支持搜索、筛选和独立对话。
+              {totalCount} 个消费者画像，覆盖 {brandFilters.length - 1} 个品牌、{new Set(state.twins.map((t) => t.target_audience_label).filter(Boolean)).size} 个目标人群。支持搜索、筛选和独立对话。
             </p>
           </div>
           <button
@@ -435,25 +461,44 @@ export function ConsumerTwinsPage() {
       ) : null}
 
       {/* Search & Filter Bar */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div className="space-y-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-tertiary" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="搜索 Persona 名称、人群标签..."
+            placeholder="搜索 Persona 名称、品牌或人群标签..."
             className="w-full rounded-btn border border-line bg-panel pl-9 pr-3 py-2 text-sm text-text placeholder:text-tertiary focus:border-accent/50 focus:outline-none"
           />
         </div>
         <div className="flex flex-wrap gap-1.5">
-          {AUDIENCE_FILTERS.map((f) => (
+          {brandFilters.map((f) => (
             <button
               key={f}
               type="button"
-              onClick={() => setActiveFilter(f)}
+              onClick={() => {
+                setActiveBrand(f);
+                setActiveAudience('全部');
+              }}
               className={`rounded-btn px-2.5 py-1 text-[0.65rem] font-medium transition ${
-                activeFilter === f
+                activeBrand === f
+                  ? 'bg-accent/20 text-accent border border-accent/30'
+                  : 'text-muted border border-transparent hover:text-text hover:bg-surfaceElevated'
+              }`}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {audienceFilters.map((f) => (
+            <button
+              key={f}
+              type="button"
+              onClick={() => setActiveAudience(f)}
+              className={`rounded-btn px-2.5 py-1 text-[0.65rem] font-medium transition ${
+                activeAudience === f
                   ? 'bg-accent/20 text-accent border border-accent/30'
                   : 'text-muted border border-transparent hover:text-text hover:bg-surfaceElevated'
               }`}
@@ -473,7 +518,7 @@ export function ConsumerTwinsPage() {
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {filteredTwins.length === 0 ? (
           <div className="col-span-full rounded-panel border border-line bg-panel p-8 text-center text-sm text-muted">
-            {searchQuery || activeFilter !== '全部'
+            {searchQuery || activeBrand !== '全部' || activeAudience !== '全部'
               ? '没有匹配的 Persona。尝试调整搜索条件或筛选标签。'
               : '暂无数字孪生资产。点击"创建孪生"从访谈文本生成第一个 Persona。'}
           </div>
@@ -483,6 +528,7 @@ export function ConsumerTwinsPage() {
           const name = String(profile.name ?? twin.target_audience_label ?? twin.id);
           const ageRange = String(profile.age_range ?? '');
           const audienceTag = String(profile.audience_label ?? twin.target_audience_label ?? '');
+          const brandTag = getTwinBrand(profile, twin.source_lineage);
           const geo = profile.geographic as Record<string, string> | undefined;
           const city = geo?.city ?? '';
           const tier = geo?.tier ?? '';
@@ -501,6 +547,9 @@ export function ConsumerTwinsPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <div className="text-base font-semibold text-text truncate">{name}</div>
+                      <span className="shrink-0 rounded-btn border border-line bg-surfaceElevated px-1.5 py-0.5 text-[0.55rem] font-medium text-text">
+                        {brandTag}
+                      </span>
                       <span className="shrink-0 rounded-btn border border-accent/30 bg-accentSoft px-1.5 py-0.5 text-[0.55rem] font-medium text-accent">
                         {audienceTag}
                       </span>

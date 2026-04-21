@@ -1,10 +1,27 @@
 import { Loader2, LogIn } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { resolveRuntimeApiBase } from '../services/runtimeApiBase';
 
-const API_BASE = (import.meta.env.VITE_STUDY_RUNTIME_API_URL || 'http://127.0.0.1:8000') as string;
+const API_BASE = resolveRuntimeApiBase();
+const AUTH_REQUEST_TIMEOUT_MS = 8_000;
+const DEV_FALLBACK_TOKEN = 'apt_dev_local_demo';
 
 type AuthMode = 'login' | 'register';
+
+function persistAuthSession(data: {
+  token?: string;
+  user?: Record<string, unknown>;
+  teams?: unknown[];
+}) {
+  localStorage.setItem('aipersona_token', data.token ?? '');
+  localStorage.setItem('aipersona_user', JSON.stringify(data.user ?? {}));
+  if (data.teams?.length) {
+    localStorage.setItem('aipersona_teams', JSON.stringify(data.teams));
+  } else {
+    localStorage.removeItem('aipersona_teams');
+  }
+}
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -15,6 +32,28 @@ export function LoginPage() {
   const [teamName, setTeamName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function completeDevelopmentFallbackLogin() {
+    const fallbackDisplayName = mode === 'register'
+      ? (displayName.trim() || 'MirrorWorld Demo')
+      : (email.split('@')[0]?.trim() || 'MirrorWorld Demo');
+    persistAuthSession({
+      token: DEV_FALLBACK_TOKEN,
+      user: {
+        id: '00000000-0000-4000-8000-000000000001',
+        email: email.trim() || 'demo@mirrorworld.local',
+        display_name: fallbackDisplayName,
+        role: 'owner',
+      },
+      teams: [{
+        id: '00000000-0000-4000-8000-000000000101',
+        name: teamName.trim() || 'MirrorWorld Demo Team',
+        slug: 'mirrorworld-demo-team',
+        member_role: 'owner',
+      }],
+    });
+    navigate('/dashboard');
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -27,27 +66,35 @@ export function LoginPage() {
       : { email, password, display_name: displayName, team_name: teamName || undefined };
 
     try {
-      const resp = await fetch(`${API_BASE}${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
+      const resp = await Promise.race([
+        fetch(`${API_BASE}${endpoint}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        }),
+        new Promise<Response>((_, reject) => {
+          setTimeout(() => reject(new Error('登录超时，请确认本地 API 服务已启动')), AUTH_REQUEST_TIMEOUT_MS);
+        }),
+      ]);
 
       if (!resp.ok) {
         const data = await resp.json().catch(() => ({}));
+        if (import.meta.env.DEV && (resp.status >= 500 || data.code === 'auth_unavailable')) {
+          completeDevelopmentFallbackLogin();
+          return;
+        }
         throw new Error(data.detail || `请求失败：${resp.status}`);
       }
 
       const data = await resp.json();
-      // Store auth info
-      localStorage.setItem('aipersona_token', data.token ?? '');
-      localStorage.setItem('aipersona_user', JSON.stringify(data.user ?? {}));
-      if (data.teams?.length) {
-        localStorage.setItem('aipersona_teams', JSON.stringify(data.teams));
-      }
+      persistAuthSession(data);
 
       navigate('/dashboard');
     } catch (err) {
+      if (import.meta.env.DEV) {
+        completeDevelopmentFallbackLogin();
+        return;
+      }
       setError(err instanceof Error ? err.message : '操作失败');
     } finally {
       setLoading(false);
@@ -61,7 +108,7 @@ export function LoginPage() {
           <div className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-accent/15 text-accent mb-4">
             <LogIn className="h-6 w-6" />
           </div>
-          <h1 className="text-2xl font-semibold text-text">AIpersona</h1>
+          <h1 className="text-2xl font-semibold text-text">MirrorWorld</h1>
           <p className="mt-1 text-sm text-muted">AI 消费者研究工作台</p>
         </div>
 
@@ -157,16 +204,6 @@ export function LoginPage() {
             </button>
           </form>
 
-          {/* Quick demo access */}
-          <div className="mt-4 pt-4 border-t border-line text-center">
-            <button
-              type="button"
-              onClick={() => navigate('/dashboard')}
-              className="text-[0.65rem] text-tertiary hover:text-accent transition"
-            >
-              跳过登录，直接进入演示
-            </button>
-          </div>
         </div>
       </div>
     </div>

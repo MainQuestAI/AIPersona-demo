@@ -511,7 +511,7 @@ export function WorkbenchPlaceholder() {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-full flex-col">
       {actionState.status === 'error' ? (
         <div className="flex-none inner-card border-danger/30 bg-dangerSoft px-4 py-3 text-sm text-danger">
           {actionState.message}

@@ -3,8 +3,9 @@ import ReactMarkdown from 'react-markdown';
 import { sendStreamChat } from '../hooks/useStreamChat';
 import { ThinkingBlock } from '../components/thinking-block';
 import { useEffect, useRef, useState } from 'react';
+import { resolveRuntimeApiBase } from '../services/runtimeApiBase';
 
-const API_BASE = (import.meta.env.VITE_STUDY_RUNTIME_API_URL || 'http://127.0.0.1:8000') as string;
+const API_BASE = resolveRuntimeApiBase();
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string; thinking?: string };
 

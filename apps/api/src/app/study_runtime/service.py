@@ -55,6 +55,7 @@ class ResumeRunCommand:
     study_id: str
     study_run_id: str
     approved_by: str
+    action: str = "continue"
     decision_comment: str | None = None
 
 
@@ -89,6 +90,9 @@ class StudyRuntimeRepository(Protocol):
         ...
 
     def bind_workflow(self, run_id: str, workflow_id: str, workflow_run_id: str | None) -> None:
+        ...
+
+    def fail_run(self, study_id: str, run_id: str, reason: str | None = None) -> None:
         ...
 
     def get_run(self, study_id: str, run_id: str) -> dict[str, Any] | None:
@@ -130,12 +134,53 @@ class StudyRuntimeRepository(Protocol):
     def list_dataset_mappings(self) -> list[dict[str, Any]]:
         ...
 
+    def pause_run_for_adjustment(
+        self,
+        *,
+        study_id: str,
+        run_id: str,
+        actor: str,
+        decision_comment: str | None,
+    ) -> dict[str, Any]:
+        ...
+
+    def create_plan_version_from_edit(
+        self,
+        study_id: str,
+        base_version: dict[str, Any],
+        twin_version_ids: list[str],
+        stimulus_ids: list[str],
+    ) -> dict[str, Any]:
+        ...
+
+    def get_study_messages(self, study_id: str, after_id: str | None = None) -> list[dict[str, Any]]:
+        ...
+
+    def create_study_message(
+        self,
+        study_id: str,
+        role: str,
+        content: str,
+        message_type: str = "text",
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        ...
+
 
 class StudyRuntimeWorkflowGateway(Protocol):
     def start_study_run(self, run_id: str, study_id: str, plan_version_id: str) -> dict[str, str | None]:
         ...
 
-    def resume_study_run(self, workflow_id: str, approved_by: str, decision_comment: str | None) -> None:
+    def start_agent_study_run(self, run_id: str, study_id: str, plan_version_id: str) -> dict[str, str | None]:
+        ...
+
+    def resume_study_run(
+        self,
+        workflow_id: str,
+        approved_by: str,
+        action: str,
+        decision_comment: str | None,
+    ) -> None:
         ...
 
 
@@ -151,7 +196,10 @@ class FakeWorkflowGateway:
             "workflow_run_id": f"workflow-exec-{run_id}",
         }
 
-    def resume_study_run(self, workflow_id: str, approved_by: str, decision_comment: str | None) -> None:
+    def start_agent_study_run(self, run_id: str, study_id: str, plan_version_id: str) -> dict[str, str | None]:
+        return self.start_study_run(run_id, study_id, plan_version_id)
+
+    def resume_study_run(self, workflow_id: str, approved_by: str, action: str, decision_comment: str | None) -> None:
         self.resumed_runs.append(workflow_id)
 
 
@@ -224,23 +272,27 @@ class StudyRuntimeService:
             command.study_plan_version_id,
             command.requested_by,
         )
-        if workflow_type == "agent":
-            workflow_ref = self._workflow_gateway.start_agent_study_run(
+        try:
+            if workflow_type == "agent":
+                workflow_ref = self._workflow_gateway.start_agent_study_run(
+                    run["id"],
+                    command.study_id,
+                    command.study_plan_version_id,
+                )
+            else:
+                workflow_ref = self._workflow_gateway.start_study_run(
+                    run["id"],
+                    command.study_id,
+                    command.study_plan_version_id,
+                )
+            self._repository.bind_workflow(
                 run["id"],
-                command.study_id,
-                command.study_plan_version_id,
+                workflow_ref["workflow_id"] or f"study-run-{run['id']}",
+                workflow_ref["workflow_run_id"],
             )
-        else:
-            workflow_ref = self._workflow_gateway.start_study_run(
-                run["id"],
-                command.study_id,
-                command.study_plan_version_id,
-            )
-        self._repository.bind_workflow(
-            run["id"],
-            workflow_ref["workflow_id"] or f"study-run-{run['id']}",
-            workflow_ref["workflow_run_id"],
-        )
+        except Exception as exc:
+            self._repository.fail_run(command.study_id, run["id"], str(exc))
+            raise AppError("Failed to start study run", code="study_run_start_failed", status_code=502) from exc
         return self._require_run(command.study_id, run["id"])
 
     def resume_run(self, command: ResumeRunCommand) -> dict[str, Any]:
@@ -251,6 +303,7 @@ class StudyRuntimeService:
         self._workflow_gateway.resume_study_run(
             workflow_id,
             command.approved_by,
+            command.action,
             command.decision_comment,
         )
         return self._require_run(command.study_id, command.study_run_id)

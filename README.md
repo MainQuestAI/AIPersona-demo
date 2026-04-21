@@ -38,6 +38,8 @@ docs/
 ## 参考入口
 
 - `docs/handoff.md`
+- `docs/setup/local_docker_environment.md`
 - `docs/planning/project_takeover_development_plan.md`
 - `docs/planning/detailed_work_packages.md`
 - `docs/planning/wave0_execution_checklists_a01_w01_r01.md`
+- `docs/deployment/resource-inventory-2026-04-13.md`

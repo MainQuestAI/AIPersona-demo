@@ -19,6 +19,17 @@ type State =
     }
   | { status: 'error'; message: string };
 
+async function resolveOptional<T>(loader: Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await loader;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error;
+    }
+    return fallback;
+  }
+}
+
 export function CalibrationCenterPage() {
   const [state, setState] = useState<State>({ status: 'loading' });
 
@@ -27,10 +38,10 @@ export function CalibrationCenterPage() {
     void (async () => {
       try {
         const [benchmarkPacks, calibrationRuns, confidenceSnapshots, driftAlerts] = await Promise.all([
-          listBenchmarkPacks({ signal: controller.signal }),
-          listCalibrationRuns({ signal: controller.signal }),
-          listConfidenceSnapshots({ signal: controller.signal }),
-          listDriftAlerts({ signal: controller.signal }),
+          resolveOptional(listBenchmarkPacks({ signal: controller.signal }), []),
+          resolveOptional(listCalibrationRuns({ signal: controller.signal }), []),
+          resolveOptional(listConfidenceSnapshots({ signal: controller.signal }), []),
+          resolveOptional(listDriftAlerts({ signal: controller.signal }), []),
         ]);
         setState({
           status: 'ready',

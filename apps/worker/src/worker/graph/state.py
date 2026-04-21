@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import operator
-from typing import Annotated, Any, TypedDict
+from typing import Annotated, Any, Optional, TypedDict
 
 
 class InterviewResult(TypedDict, total=False):
@@ -49,5 +49,5 @@ class ResearchState(TypedDict, total=False):
     pivot_reason: str  # why agent wants to change direction
 
     # Human-in-the-loop
-    human_feedback: str | None
-    human_action: str | None  # e.g. "continue", "adjust", "stop"
+    human_feedback: Optional[str]
+    human_action: Optional[str]  # e.g. "continue", "adjust", "stop"

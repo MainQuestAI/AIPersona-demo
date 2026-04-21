@@ -7,6 +7,7 @@ import {
   listConsumerTwins,
   type ConsumerTwinRecord,
 } from '../services/studyRuntime';
+import { resolveRuntimeApiBase } from '../services/runtimeApiBase';
 import { sendStreamChat } from '../hooks/useStreamChat';
 import { ThinkingBlock } from '../components/thinking-block';
 
@@ -82,7 +83,7 @@ export function PersonaChatPage() {
       role: m.role === 'assistant' ? 'assistant' : 'user',
       content: m.content,
     }));
-    const apiBase = (import.meta.env.VITE_STUDY_RUNTIME_API_URL || 'http://127.0.0.1:8000') as string;
+    const apiBase = resolveRuntimeApiBase();
 
     try {
       await sendStreamChat(
@@ -132,6 +133,7 @@ export function PersonaChatPage() {
 
   const profile = (twin.persona_profile_snapshot_json ?? {}) as Record<string, unknown>;
   const name = String(profile.name ?? twin.target_audience_label ?? '消费者');
+  const brandName = typeof profile.brand_name === 'string' ? profile.brand_name : '';
   const audienceLabel = String(profile.audience_label ?? twin.target_audience_label ?? '');
   const ageRange = String(profile.age_range ?? '');
   const geo = profile.geographic as Record<string, string> | undefined;
@@ -152,6 +154,11 @@ export function PersonaChatPage() {
           <div className="min-w-0">
             <h2 className="text-lg font-semibold text-text truncate">{name}</h2>
             <div className="flex items-center gap-2 text-[0.65rem] text-muted">
+              {brandName ? (
+                <span className="rounded-btn border border-line bg-surfaceElevated px-1.5 py-0.5 font-medium text-text">
+                  {brandName}
+                </span>
+              ) : null}
               <span className="rounded-btn border border-accent/30 bg-accentSoft px-1.5 py-0.5 font-medium text-accent">
                 {audienceLabel}
               </span>

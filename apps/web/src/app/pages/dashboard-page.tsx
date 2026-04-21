@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router-dom';
 
 import {
   createDemoStudy,
+  getOfflineDashboardSnapshot,
   listConsumerTwins,
   listIngestionJobs,
   listStimuli,
@@ -30,6 +31,17 @@ type State =
     }
   | { status: 'error'; message: string };
 
+async function resolveOptional<T>(loader: Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await loader;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error;
+    }
+    return fallback;
+  }
+}
+
 export function DashboardPage() {
   const navigate = useNavigate();
   const [state, setState] = useState<State>({ status: 'loading' });
@@ -40,13 +52,21 @@ export function DashboardPage() {
     const controller = new AbortController();
     void (async () => {
       try {
-        const [studies, twins, stimuli, jobs] = await Promise.all([
-          listStudies({ signal: controller.signal }),
-          listConsumerTwins({ signal: controller.signal }),
-          listStimuli({ signal: controller.signal }),
-          listIngestionJobs({ signal: controller.signal }),
+        const data = await Promise.race([
+          (async () => {
+            const studies = await listStudies({ signal: controller.signal });
+            const [twins, stimuli, jobs] = await Promise.all([
+              resolveOptional(listConsumerTwins({ signal: controller.signal }), []),
+              resolveOptional(listStimuli({ signal: controller.signal }), []),
+              resolveOptional(listIngestionJobs({ signal: controller.signal }), []),
+            ]);
+            return { studies, twins, stimuli, jobs };
+          })(),
+          new Promise<ReturnType<typeof getOfflineDashboardSnapshot>>((resolve) => {
+            setTimeout(() => resolve(getOfflineDashboardSnapshot()), 8_500);
+          }),
         ]);
-        setState({ status: 'ready', studies, twins, stimuli, jobs });
+        setState({ status: 'ready', ...data });
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') {
           return;
