@@ -14,7 +14,7 @@
     "test": "turbo run test && pnpm run test:py",
     "test:web": "turbo run test",
     "test:py": "python3 -m compileall -q apps/api/src apps/worker/src apps/mcp/src && echo '✓ Python compile check passed'",
-    "test:py:full": "cd apps/api && PYTHONPATH=src python3 -m pytest tests/ -x -q",
+    "test:py:full": "cd apps/api && PYTHONPATH=src:../worker/src python3 -m pytest tests/ -x -q",
     "check:contracts": "pnpm exec tsc -p packages/contracts/tsconfig.json --noEmit && pnpm exec tsc -p packages/domain-models/tsconfig.json --noEmit",
     "check:runtime": "python3 -m compileall apps/api/src apps/worker/src"
   },

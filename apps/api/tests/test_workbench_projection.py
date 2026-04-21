@@ -144,9 +144,24 @@ class WorkbenchProjectionTests(unittest.TestCase):
         self.assertEqual(
             result["current_run"]["steps"],
             [
-                {"step_type": "twin_preparation", "status": "succeeded"},
-                {"step_type": "qual_execution", "status": "succeeded"},
-                {"step_type": "quant_execution", "status": "succeeded"},
+                {
+                    "step_type": "twin_preparation",
+                    "status": "succeeded",
+                    "started_at": None,
+                    "ended_at": None,
+                },
+                {
+                    "step_type": "qual_execution",
+                    "status": "succeeded",
+                    "started_at": None,
+                    "ended_at": None,
+                },
+                {
+                    "step_type": "quant_execution",
+                    "status": "succeeded",
+                    "started_at": None,
+                    "ended_at": None,
+                },
             ],
         )
         self.assertEqual(result["summary"]["total_plan_versions"], 2)
