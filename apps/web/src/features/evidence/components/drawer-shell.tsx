@@ -26,7 +26,7 @@ export function DrawerShell({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             className="absolute inset-0 backdrop-blur-sm"
-            style={{ background: 'rgba(3,3,5,0.60)' }}
+            style={{ background: 'var(--color-overlay-60)' }}
             role="button"
             tabIndex={-1}
             aria-label="关闭面板"
@@ -45,7 +45,7 @@ export function DrawerShell({
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
             className="absolute inset-y-0 right-0 w-full max-w-xl overflow-y-auto border-l border-line p-6 backdrop-blur-xl"
-            style={{ background: 'rgba(3,3,5,0.95)' }}
+            style={{ background: 'var(--color-overlay-95)' }}
           >
             {children}
           </motion.div>
@@ -79,7 +79,7 @@ export function ModalShell({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             className="absolute inset-0 backdrop-blur-sm"
-            style={{ background: 'rgba(3,3,5,0.60)' }}
+            style={{ background: 'var(--color-overlay-60)' }}
             role="button"
             tabIndex={-1}
             aria-label="关闭弹窗"
@@ -98,7 +98,7 @@ export function ModalShell({
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
             className="relative w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-card border border-line p-6 backdrop-blur-xl"
-            style={{ background: 'rgba(3,3,5,0.95)' }}
+            style={{ background: 'var(--color-overlay-95)' }}
           >
             {children}
           </motion.div>

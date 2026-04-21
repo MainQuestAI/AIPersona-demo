@@ -67,7 +67,7 @@ export function AppShell({ children }: AppShellProps) {
             height: 800,
             top: '-15%',
             left: '30%',
-            background: 'radial-gradient(circle, rgba(255,255,255,0.02) 0%, transparent 70%)',
+            background: 'radial-gradient(circle, var(--color-neutral-wash) 0%, transparent 70%)',
             filter: 'blur(120px)',
           }}
         />
@@ -87,43 +87,67 @@ export function AppShell({ children }: AppShellProps) {
                 >
                   <Menu className="h-4 w-4" />
                 </button>
-                <div className="eyebrow text-tertiary hidden sm:block">AIpersona</div>
+                <div className="eyebrow text-tertiary hidden sm:block">MirrorWorld</div>
                 <h1 className="text-lg font-semibold tracking-[-0.02em] text-text">
                   {routeMeta.label}
                 </h1>
               </div>
             </div>
-            {studyId && location.pathname.startsWith('/studies/') ? (
-              <div className="border-t border-line px-6 py-2.5 sm:px-8">
+            {studyId ? (
+              <div className="border-t border-line px-6 py-3 sm:px-8">
                 <div className="flex flex-wrap items-center gap-3">
+                  <div className="rounded-btn border border-accent/30 bg-accentSoft px-3 py-1 eyebrow text-accent">
+                    研究进行中
+                  </div>
                   {latestStudy?.businessQuestion ? (
                     <div className="max-w-xs truncate text-sm text-muted">
                       {latestStudy.businessQuestion}
                     </div>
                   ) : null}
-                  <div className="flex flex-wrap gap-2">
-                    {STUDY_DETAIL_VIEWS.map((view) => (
-                      <NavLink
-                        key={view.key}
-                        to={buildStudyRoute(`/${view.key}`, studyId)}
-                        className={({ isActive }) =>
-                          [
-                            'rounded-btn border px-3 py-1 eyebrow transition',
-                            isActive
-                              ? 'border-accent/35 bg-accentSoft text-text'
-                              : 'border-line bg-panel text-muted hover:border-accent/35 hover:text-text',
-                          ].join(' ')
-                        }
-                      >
-                        {view.label}
-                      </NavLink>
-                    ))}
+                  {location.pathname.startsWith('/studies/') ? (
+                    <div className="flex flex-wrap gap-2">
+                      {STUDY_DETAIL_VIEWS.map((view) => (
+                        <NavLink
+                          key={view.key}
+                          to={buildStudyRoute(`/${view.key}`, studyId)}
+                          className={({ isActive }) =>
+                            [
+                              'rounded-btn border px-3 py-1 eyebrow transition',
+                              isActive
+                                ? 'border-accent/35 bg-accentSoft text-text'
+                                : 'border-line bg-panel text-muted hover:border-accent/35 hover:text-text',
+                            ].join(' ')
+                          }
+                        >
+                          {view.label}
+                        </NavLink>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : latestStudy ? (
+              <div className="border-t border-line px-6 py-3 sm:px-8">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="rounded-btn border border-accent/30 bg-accentSoft px-3 py-1 eyebrow text-accent">
+                    最近研究就绪
                   </div>
+                  {latestStudy.businessQuestion ? (
+                    <div className="max-w-sm truncate text-sm text-muted">
+                      {latestStudy.businessQuestion}
+                    </div>
+                  ) : null}
+                  <NavLink
+                    to={buildStudyRoute('/workbench', latestStudy.id)}
+                    className="btn-accent"
+                  >
+                    继续上次研究
+                  </NavLink>
                 </div>
               </div>
             ) : null}
           </header>
-          <main className="flex-1 min-h-0 overflow-hidden px-4 py-4 sm:px-6 lg:px-8">
+          <main className="flex flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 py-4 sm:px-6 lg:px-8">
             <AnimatePresence mode="wait">
               <motion.div
                 key={location.pathname}
@@ -131,7 +155,7 @@ export function AppShell({ children }: AppShellProps) {
                 animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
                 exit={{ opacity: 0, y: -10, filter: 'blur(10px)' }}
                 transition={{ duration: 0.28, ease: 'easeOut' }}
-                className="h-full"
+                className="flex h-full min-h-full flex-1 flex-col"
               >
                 {children ?? <Outlet />}
               </motion.div>

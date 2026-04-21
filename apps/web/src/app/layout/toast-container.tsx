@@ -15,7 +15,8 @@ export function ToastContainer() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.95 }}
             transition={{ duration: 0.2 }}
-            className="pointer-events-auto rounded-[12px] border border-accent/30 bg-[rgba(3,3,5,0.92)] px-4 py-3 text-sm text-text shadow-lg backdrop-blur-xl"
+            className="pointer-events-auto rounded-[12px] border border-accent/30 px-4 py-3 text-sm text-text shadow-lg backdrop-blur-xl"
+            style={{ background: 'var(--color-overlay-92)' }}
           >
             <button
               type="button"

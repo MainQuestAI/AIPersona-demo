@@ -19,6 +19,12 @@ function PersonaAvatar({ name }: { name: string }) {
   );
 }
 
+function getTwinBrand(snapshot: Record<string, unknown>): string {
+  return typeof snapshot.brand_name === 'string' && snapshot.brand_name.trim()
+    ? snapshot.brand_name
+    : '未分组品牌';
+}
+
 export function TwinSelectorModal({
   open,
   onClose,
@@ -40,8 +46,10 @@ export function TwinSelectorModal({
     void listTwinVersions().then((data) => {
       if (!active) return;
       setVersions(data);
-      // Select all by default
-      setSelected(new Set(data.map((v) => v.id)));
+      const curatedDefaults = data
+        .filter((version) => Boolean(version.source_lineage?.default_demo))
+        .map((version) => version.id);
+      setSelected(new Set(curatedDefaults.length > 0 ? curatedDefaults : data.slice(0, 6).map((v) => v.id)));
       setLoading(false);
     }).catch(() => {
       if (active) setLoading(false);
@@ -53,9 +61,11 @@ export function TwinSelectorModal({
     if (!searchQuery.trim()) return versions;
     const q = searchQuery.toLowerCase();
     return versions.filter((v) => {
-      const name = String(v.persona_profile_snapshot_json?.name ?? '').toLowerCase();
+      const snapshot = (v.persona_profile_snapshot_json ?? {}) as Record<string, unknown>;
+      const name = String(snapshot.name ?? '').toLowerCase();
       const audience = String(v.target_audience_label ?? '').toLowerCase();
-      return name.includes(q) || audience.includes(q);
+      const brand = getTwinBrand(snapshot).toLowerCase();
+      return name.includes(q) || audience.includes(q) || brand.includes(q);
     });
   }, [versions, searchQuery]);
 
@@ -91,11 +101,13 @@ export function TwinSelectorModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-md"
+      style={{ background: 'var(--color-overlay-60)' }}
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg max-h-[80vh] flex flex-col rounded-panel border border-line bg-panel shadow-2xl"
+        className="flex max-h-[80vh] w-full max-w-lg flex-col overflow-hidden rounded-panel border border-line shadow-[0_24px_80px_rgba(0,0,0,0.18)]"
+        style={{ background: 'var(--color-overlay-95)' }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -130,7 +142,7 @@ export function TwinSelectorModal({
         </div>
 
         {/* List */}
-        <div className="flex-1 overflow-y-auto px-5 py-3 space-y-1">
+        <div className="flex-1 space-y-1 overflow-y-auto bg-rail px-5 py-3">
           {loading ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-5 w-5 animate-spin text-accent" />
@@ -139,8 +151,10 @@ export function TwinSelectorModal({
             <p className="py-8 text-center text-sm text-muted">无匹配的 Persona</p>
           ) : (
             filtered.map((v) => {
-              const name = String(v.persona_profile_snapshot_json?.name ?? v.target_audience_label ?? v.id);
+              const snapshot = (v.persona_profile_snapshot_json ?? {}) as Record<string, unknown>;
+              const name = String(snapshot.name ?? v.target_audience_label ?? v.id);
               const audience = String(v.target_audience_label ?? '');
+              const brand = getTwinBrand(snapshot);
               const isSelected = selected.has(v.id);
               return (
                 <button
@@ -148,7 +162,7 @@ export function TwinSelectorModal({
                   type="button"
                   onClick={() => toggleItem(v.id)}
                   className={`flex w-full items-center gap-3 rounded-btn px-3 py-2.5 text-left transition ${
-                    isSelected ? 'bg-accent/10 border border-accent/30' : 'border border-transparent hover:bg-surfaceElevated'
+                    isSelected ? 'border border-accent/30 bg-accentSoft' : 'border border-transparent hover:bg-panel'
                   }`}
                 >
                   <div className={`h-4 w-4 shrink-0 rounded border flex items-center justify-center ${
@@ -159,7 +173,7 @@ export function TwinSelectorModal({
                   <PersonaAvatar name={name} />
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium text-text truncate">{name}</div>
-                    <div className="text-[0.6rem] text-muted">{audience}</div>
+                    <div className="text-[0.6rem] text-muted">{brand} · {audience}</div>
                   </div>
                 </button>
               );
