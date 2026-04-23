@@ -685,6 +685,16 @@ function buildOfflineArtifacts(mode: 'draft' | 'midrun' | 'completed' | 'rerun')
             themes: ['情绪安全感', '日常饮用适配度'],
             summary: '被理解为更适合长期饮用的稳妥选项。',
           },
+          {
+            stimulus_name: '初元优养',
+            themes: ['强化营养感', '医疗化门槛', '信任分化'],
+            summary: '"优养"会让人联想到功能更完整的营养补充，但专业感让部分人群产生距离。',
+          },
+          {
+            stimulus_name: '安纯',
+            themes: ['低风险安全感', '缺乏记忆点', '功能表达不足'],
+            summary: '名称本身不让人反感，但也缺乏主动选择的理由。',
+          },
         ],
       },
       interviews: [
