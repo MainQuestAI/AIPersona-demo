@@ -66,17 +66,23 @@ export function WorkbenchPage({
   const [messageLoadError, setMessageLoadError] = useState<string | null>(null);
   const lastIdRef = useRef<string | undefined>(undefined);
 
-  // Initial load + polling
+  // Initial load + polling with exponential backoff
   useEffect(() => {
     let active = true;
+    let consecutiveErrors = 0;
+    let timerId: ReturnType<typeof setTimeout> | undefined;
     setMessages([]);
     setMessageLoadError(null);
     lastIdRef.current = undefined;
+
+    const BASE_INTERVAL = 2500;
+    const MAX_INTERVAL = 30_000;
 
     async function poll() {
       try {
         const { messages: newMsgs } = await fetchAgentMessages(studyId, lastIdRef.current);
         if (!active) return;
+        consecutiveErrors = 0;
         setMessageLoadError(null);
         if (newMsgs.length > 0) {
           setMessages((prev) => [...prev, ...newMsgs]);
@@ -84,15 +90,19 @@ export function WorkbenchPage({
         }
       } catch (error) {
         if (!active) return;
+        consecutiveErrors += 1;
         setMessageLoadError(
           error instanceof Error ? error.message : '研究会话加载失败，请稍后重试。',
         );
       }
+      if (active) {
+        const delay = Math.min(BASE_INTERVAL * 2 ** consecutiveErrors, MAX_INTERVAL);
+        timerId = setTimeout(poll, delay);
+      }
     }
 
     void poll();
-    const interval = setInterval(poll, 2500);
-    return () => { active = false; clearInterval(interval); };
+    return () => { active = false; clearTimeout(timerId); };
   }, [studyId]);
 
   // Load study memories
