@@ -1,4 +1,12 @@
-import { clearAuthSession, getActiveTeamId, getAuthToken } from './auth-session';
+import { clearAuthSession, getActiveTeamId } from './auth-session';
+
+function redirectToLogin(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  const redirect = `${window.location.pathname}${window.location.search}`;
+  window.location.assign(`/login?redirect=${encodeURIComponent(redirect)}`);
+}
 
 export type StudyBundleStudy = {
   id: string;
@@ -1714,11 +1722,7 @@ async function requestJson<T>(
 ): Promise<T> {
   const apiBase = getApiBase();
   const headers = new Headers(init.headers ?? {});
-  const token = getAuthToken();
   const activeTeamId = getActiveTeamId();
-  if (token && !headers.has('Authorization')) {
-    headers.set('Authorization', `Bearer ${token}`);
-  }
   if (activeTeamId && !headers.has('X-Team-Id')) {
     headers.set('X-Team-Id', activeTeamId);
   }
@@ -1727,6 +1731,7 @@ async function requestJson<T>(
   }
   const responseInit: RequestInit = {
     ...init,
+    credentials: 'include',
   };
   if ([...headers.keys()].length > 0) {
     responseInit.headers = headers;
@@ -1737,6 +1742,7 @@ async function requestJson<T>(
     if (!response.ok) {
       if (response.status === 401 || response.status === 403) {
         clearAuthSession();
+        redirectToLogin();
         throw new Error('登录状态已失效，请重新登录后继续。');
       }
       if (response.status >= 500) {
@@ -1767,23 +1773,21 @@ async function requestText(
 ): Promise<string> {
   const apiBase = getApiBase();
   const headers = new Headers(init.headers ?? {});
-  const token = getAuthToken();
   const activeTeamId = getActiveTeamId();
-  if (token && !headers.has('Authorization')) {
-    headers.set('Authorization', `Bearer ${token}`);
-  }
   if (activeTeamId && !headers.has('X-Team-Id')) {
     headers.set('X-Team-Id', activeTeamId);
   }
 
   const response = await fetchWithTimeout(`${apiBase}${path}`, {
     ...init,
+    credentials: 'include',
     headers,
   });
 
   if (!response.ok) {
     if (response.status === 401 || response.status === 403) {
       clearAuthSession();
+      redirectToLogin();
       throw new Error('登录状态已失效，请重新登录后继续。');
     }
     const detail = await readErrorDetail(response);

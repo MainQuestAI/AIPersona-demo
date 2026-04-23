@@ -12,6 +12,7 @@ from app.core.auth import (
     AuthUnavailableError,
     InvalidCredentialsError,
     MissingCredentialsError,
+    SESSION_COOKIE_NAME,
     resolve_auth_context,
 )
 from app.core.config import get_settings
@@ -50,6 +51,8 @@ async def lifespan(app: FastAPI):
 
 PUBLIC_PATHS = {
     "/",
+    "/api/dev/login",
+    "/api/oauth/callback",
     "/auth/login",
     "/auth/register",
     "/docs",
@@ -76,10 +79,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 database_url=settings.database_url,
                 authorization=request.headers.get("Authorization"),
                 api_key=request.headers.get("X-API-Key"),
+                session_cookie=request.cookies.get(SESSION_COOKIE_NAME),
             )
         except MissingCredentialsError:
             return Response(
-                content='{"detail":"Authentication required. Set Authorization: Bearer <token> or X-API-Key."}',
+                content='{"detail":"Authentication required. Sign in with MainQuest Auth or provide X-API-Key."}',
                 status_code=401,
                 media_type="application/json",
             )

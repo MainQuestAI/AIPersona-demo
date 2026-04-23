@@ -29,7 +29,14 @@ services:
       API_PORT: ${API_PORT:-8000}
       API_RELOAD: ${API_RELOAD:-false}
       API_KEY_REQUIRED: ${API_KEY_REQUIRED:-false}
-      DEV_AUTH_FALLBACK: ${DEV_AUTH_FALLBACK:-false}
+      ENABLE_DEV_AUTH: ${ENABLE_DEV_AUTH:-false}
+      OAUTH_SERVER_URL: ${OAUTH_SERVER_URL}
+      OAUTH_CLIENT_ID: ${OAUTH_CLIENT_ID}
+      OAUTH_CLIENT_SECRET: ${OAUTH_CLIENT_SECRET}
+      SESSION_COOKIE_SECRET: ${SESSION_COOKIE_SECRET}
+      WEB_APP_ORIGINS: ${WEB_APP_ORIGINS:-http://localhost:4173,http://127.0.0.1:4173}
+      SHARED_DEMO_TEAM_SLUG: ${SHARED_DEMO_TEAM_SLUG:-shared-demo}
+      SHARED_DEMO_TEAM_NAME: ${SHARED_DEMO_TEAM_NAME:-共享演示团队}
       DATABASE_URL: postgresql://${POSTGRES_USER:-aipersona}:${POSTGRES_PASSWORD:-aipersona_stage}@postgres:5432/${POSTGRES_DB:-aipersona_stage}
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
       DASHSCOPE_MODEL: ${DASHSCOPE_MODEL:-qwen-plus}
@@ -66,6 +73,9 @@ services:
       dockerfile: docker/node-stage.Dockerfile
       args:
         VITE_STUDY_RUNTIME_API_URL: ${STAGE_WEB_API_URL:-http://127.0.0.1:8001}
+        VITE_OAUTH_PORTAL_URL: ${VITE_OAUTH_PORTAL_URL}
+        VITE_OAUTH_CLIENT_ID: ${VITE_OAUTH_CLIENT_ID}
+        VITE_ENABLE_DEV_AUTH: ${VITE_ENABLE_DEV_AUTH:-false}
     ports:
       - "${STAGE_WEB_PORT:-4173}:80"
     depends_on:

@@ -3,8 +3,8 @@ import { ChevronLeft, ChevronRight, LogIn, LogOut, Moon, ScanEye, Sun, X } from 
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { APP_ROUTES } from '@/types/route';
 import {
-  clearAuthSession,
   getActiveTeamId,
+  logoutAuthSession,
   readStoredTeams,
   readStoredUser,
   setActiveTeamId,
@@ -28,8 +28,10 @@ function UserStatusArea({ collapsed }: { collapsed: boolean }) {
 
     syncSessionState();
     window.addEventListener('storage', syncSessionState);
+    window.addEventListener('aipersona-auth-changed', syncSessionState);
     return () => {
       window.removeEventListener('storage', syncSessionState);
+      window.removeEventListener('aipersona-auth-changed', syncSessionState);
     };
   }, []);
 
@@ -92,7 +94,7 @@ function UserStatusArea({ collapsed }: { collapsed: boolean }) {
         <button
           type="button"
           onClick={() => {
-            clearAuthSession();
+            void logoutAuthSession();
             navigate('/login');
           }}
           className="text-muted hover:text-danger transition"

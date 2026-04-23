@@ -79,6 +79,7 @@ cp .env.compose.example .env.compose
 至少要填写：
 
 - `DASHSCOPE_API_KEY`
+- 如需走正式联调，还要补齐 `OAUTH_SERVER_URL / OAUTH_CLIENT_ID / OAUTH_CLIENT_SECRET / SESSION_COOKIE_SECRET`
 
 其他本地开发默认值已经预填。
 
@@ -130,9 +131,10 @@ pnpm run dev:temporal
 
 ## 6. 访问地址
 
-- Web：`http://localhost:5173`
+- Web：`http://localhost:5174`
 - API：`http://localhost:8000`
 - API 健康检查：`http://localhost:8000/healthz`
+- MainQuest Auth Portal：`http://localhost:5173`
 - PostgreSQL：`localhost:5432`
 - Temporal gRPC（可选）：`localhost:7233`
 - Temporal UI（可选）：`http://localhost:8233`
@@ -147,7 +149,8 @@ pnpm run dev:temporal
 
 - 提供 Postgres 本地凭据
 - 提供 DashScope API Key
-- 提供本地开发开关
+- 提供 OAuth / Dev Auth 开关
+- 提供本地共享 demo team 配置
 
 ### `.env`
 

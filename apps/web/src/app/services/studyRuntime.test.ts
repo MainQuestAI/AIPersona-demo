@@ -17,6 +17,13 @@ describe('studyRuntime service', () => {
 
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn());
+    vi.stubGlobal('window', {
+      location: {
+        pathname: '/dashboard',
+        search: '',
+        assign: vi.fn(),
+      },
+    });
     const store = new Map<string, string>();
     vi.stubGlobal('localStorage', {
       getItem: (key: string) => store.get(key) ?? null,
@@ -63,7 +70,7 @@ describe('studyRuntime service', () => {
     );
   });
 
-  it('injects bearer token for protected runtime requests', async () => {
+  it('uses cookie session and active team header for protected runtime requests', async () => {
     const fetchMock = vi.mocked(globalThis.fetch);
     fetchMock.mockResolvedValue(
       new Response(
@@ -82,7 +89,6 @@ describe('studyRuntime service', () => {
         { status: 200 },
       ),
     );
-    globalThis.localStorage.setItem('aipersona_token', 'token-123');
     globalThis.localStorage.setItem('aipersona_teams', JSON.stringify([{ id: 'team-123', name: 'Stage Team' }]));
 
     await fetchWorkbenchProjection('study-1');
@@ -95,8 +101,8 @@ describe('studyRuntime service', () => {
       }),
     );
     const headers = fetchMock.mock.calls[0]?.[1]?.headers as Headers;
-    expect(headers.get('Authorization')).toBe('Bearer token-123');
     expect(headers.get('X-Team-Id')).toBe('team-123');
+    expect(fetchMock.mock.calls[0]?.[1]?.credentials).toBe('include');
   });
 
   it('creates a demo study and returns the runtime bundle', async () => {
@@ -277,11 +283,9 @@ describe('studyRuntime service', () => {
         { status: 401, statusText: 'Unauthorized' },
       ),
     );
-    globalThis.localStorage.setItem('aipersona_token', 'expired-token');
     globalThis.localStorage.setItem('aipersona_user', JSON.stringify({ display_name: '老板' }));
 
     await expect(listStudies()).rejects.toThrow('登录状态已失效，请重新登录后继续。');
-    expect(globalThis.localStorage.getItem('aipersona_token')).toBeNull();
     expect(globalThis.localStorage.getItem('aipersona_user')).toBeNull();
   });
 
@@ -381,7 +385,6 @@ describe('studyRuntime service', () => {
   it('fetches report html with authenticated text request headers', async () => {
     const fetchMock = vi.mocked(globalThis.fetch);
     fetchMock.mockResolvedValue(new Response('<html><body>report</body></html>', { status: 200 }));
-    globalThis.localStorage.setItem('aipersona_token', 'token-123');
     globalThis.localStorage.setItem('aipersona_teams', JSON.stringify([{ id: 'team-123', name: 'Stage Team' }]));
 
     const html = await fetchStudyReportHtml('study-1');
@@ -390,9 +393,8 @@ describe('studyRuntime service', () => {
     const headers = fetchMock.mock.calls[0]?.[1]?.headers as Headers;
     expect(fetchMock).toHaveBeenCalledWith(
       'http://127.0.0.1:8000/studies/study-1/report',
-      expect.objectContaining({ headers: expect.any(Headers) }),
+      expect.objectContaining({ headers: expect.any(Headers), credentials: 'include' }),
     );
-    expect(headers.get('Authorization')).toBe('Bearer token-123');
     expect(headers.get('X-Team-Id')).toBe('team-123');
   });
 });

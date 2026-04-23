@@ -12,7 +12,7 @@
 - 不再挂载源码目录
 - API 默认 `APP_ENV=stage`
 - API 默认 `API_RELOAD=false`
-- API 默认 `DEV_AUTH_FALLBACK=false`
+- API 默认 `ENABLE_DEV_AUTH=false`
 - Web 使用构建后的静态产物，不再运行 Vite dev server
 
 ## 2. 新增文件
@@ -34,7 +34,13 @@ cp .env.stage.example .env.stage
 至少补齐：
 
 - `DASHSCOPE_API_KEY`
-- 如需对外访问，按实际情况调整 `STAGE_WEB_API_URL`
+- `OAUTH_SERVER_URL`
+- `OAUTH_CLIENT_ID`
+- `OAUTH_CLIENT_SECRET`
+- `SESSION_COOKIE_SECRET`
+- `VITE_OAUTH_PORTAL_URL`
+- `VITE_OAUTH_CLIENT_ID`
+- 如需对外访问，按实际情况调整 `STAGE_WEB_API_URL` 与 `WEB_APP_ORIGINS`
 
 ### 第二步：启动 stage 联调栈
 
@@ -80,5 +86,5 @@ pnpm run stage:down
 判断 stage 入口是否正确，至少看这三点：
 
 - API 容器环境里 `APP_ENV=stage`
-- API 容器环境里 `DEV_AUTH_FALLBACK=false` 且 `API_RELOAD=false`
+- API 容器环境里 `ENABLE_DEV_AUTH=false` 且 `API_RELOAD=false`
 - Web 容器不再执行 `pnpm --filter web dev`，而是直接提供构建产物

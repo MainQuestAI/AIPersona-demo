@@ -20,10 +20,7 @@ logger = logging.getLogger(__name__)
 from app.core.auth import (
     AuthUnavailableError,
     SessionUser,
-    build_development_auth_response,
     connect_auth_database,
-    create_session_token,
-    development_auth_enabled,
     list_user_teams,
 )
 from app.study_runtime.projections import build_workbench_projection
@@ -91,10 +88,11 @@ def get_active_team_context(request: Request) -> ActiveTeamContext:
         team = next((item for item in teams if item.id == requested_team_id), None)
         if team is None:
             raise HTTPException(status_code=403, detail="当前账号无权访问该团队")
-    elif len(teams) == 1:
-        team = teams[0]
     else:
-        raise HTTPException(status_code=400, detail="多团队账号必须显式指定 X-Team-Id")
+        team = next(
+            (item for item in teams if item.slug == settings.shared_demo_team_slug),
+            teams[0],
+        )
 
     context = ActiveTeamContext(
         user=user,
@@ -114,19 +112,6 @@ def _require_study_bundle(
     team_id: str,
 ) -> dict[str, Any]:
     return service.get_study_bundle(study_id, team_id=team_id)
-
-
-def _build_unique_team_slug(cursor: Any, team_name: str) -> str:
-    base_slug = team_name.lower().replace(" ", "-")[:50] or "team"
-    slug = base_slug
-    suffix = 1
-    while True:
-        cursor.execute("SELECT 1 FROM team WHERE slug=%s", (slug,))
-        if cursor.fetchone() is None:
-            return slug
-        suffix += 1
-        trimmed = base_slug[: max(1, 50 - len(f"-{suffix}"))]
-        slug = f"{trimmed}-{suffix}"
 
 
 class CreateStudyRequest(BaseModel):
@@ -1470,120 +1455,16 @@ async def list_api_keys(
 #  Auth: User Registration & Login
 # ---------------------------------------------------------------------------
 
-class RegisterRequest(BaseModel):
+class InviteRequest(BaseModel):
     email: str = Field(min_length=3, max_length=200)
     display_name: str = Field(min_length=1, max_length=100)
-    password: str = Field(min_length=6, max_length=200)
     team_name: Optional[str] = None
 
 
-class LoginRequest(BaseModel):
-    email: str
-    password: str
-
-
-@router.post("/auth/register")
-async def register_user(payload: RegisterRequest) -> dict[str, Any]:
-    """Register a new user and optionally create a team."""
-    password_hash = hashlib.pbkdf2_hmac("sha256", payload.password.encode(), b"aipersona-salt-v1", 100_000).hex()
-
-    try:
-        from app.core.config import get_settings
-        settings = get_settings()
-        with connect_auth_database(settings.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT id FROM app_user WHERE email=%s", (payload.email,))
-                if cur.fetchone():
-                    raise HTTPException(status_code=409, detail="该邮箱已注册")
-                cur.execute(
-                    "INSERT INTO app_user (email, display_name, password_hash) "
-                    "VALUES (%s, %s, %s) RETURNING id, email, display_name, role",
-                    (payload.email, payload.display_name, password_hash),
-                )
-                user = dict(cur.fetchone())
-                team = None
-                if payload.team_name:
-                    slug = _build_unique_team_slug(cur, payload.team_name)
-                    cur.execute(
-                        "INSERT INTO team (name, slug, owner_id) VALUES (%s, %s, %s) RETURNING id, name, slug",
-                        (payload.team_name, slug, user["id"]),
-                    )
-                    team = dict(cur.fetchone())
-                    cur.execute(
-                        "INSERT INTO team_member (team_id, user_id, role) VALUES (%s, %s, 'owner')",
-                        (team["id"], user["id"]),
-                    )
-            conn.commit()
-        token, expires_at = create_session_token(database_url=settings.database_url, user_id=str(user["id"]))
-        return {
-            "user": {k: str(v) for k, v in user.items()},
-            "team": {k: str(v) for k, v in team.items()} if team else None,
-            "teams": [{k: str(v) for k, v in team.items()}] if team else [],
-            "token": token,
-            "expires_at": expires_at,
-        }
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.warning("register_error: %s", exc)
-        if development_auth_enabled():
-            return build_development_auth_response(
-                email=payload.email,
-                display_name=payload.display_name,
-                team_name=payload.team_name,
-            )
-        raise HTTPException(status_code=500, detail="注册失败，请确保已运行 migration 007")
-
-
-@router.post("/auth/login")
-async def login_user(payload: LoginRequest) -> dict[str, Any]:
-    """Login with email and password."""
-    password_hash = hashlib.pbkdf2_hmac("sha256", payload.password.encode(), b"aipersona-salt-v1", 100_000).hex()
-    try:
-        from app.core.config import get_settings
-        settings = get_settings()
-        with connect_auth_database(settings.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT id, email, display_name, role FROM app_user "
-                    "WHERE email=%s AND password_hash=%s AND is_active=true",
-                    (payload.email, password_hash),
-                )
-                user = cur.fetchone()
-                if not user:
-                    raise HTTPException(status_code=401, detail="邮箱或密码错误")
-                cur.execute(
-                    "SELECT t.id, t.name, t.slug, tm.role AS member_role "
-                    "FROM team_member tm JOIN team t ON t.id=tm.team_id WHERE tm.user_id=%s",
-                    (user["id"],),
-                )
-                teams = [dict(row) for row in cur.fetchall()]
-        token, expires_at = create_session_token(database_url=settings.database_url, user_id=str(user["id"]))
-        return {
-            "user": {k: str(v) for k, v in dict(user).items()},
-            "teams": [{k: str(v) for k, v in t.items()} for t in teams],
-            "token": token,
-            "expires_at": expires_at,
-        }
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.warning("login_error: %s", exc)
-        if development_auth_enabled():
-            fallback_name = (payload.email.split("@")[0] if "@" in payload.email else payload.email).strip() or "MirrorWorld Demo"
-            return build_development_auth_response(
-                email=payload.email,
-                display_name=fallback_name,
-            )
-        raise HTTPException(status_code=500, detail="登录失败")
-
-
 @router.post("/teams/{team_id}/invite")
-async def invite_team_member(team_id: str, request: Request, payload: RegisterRequest) -> dict[str, Any]:
-    """Invite a user to a team (creates account if needed). Requires caller to be a team member."""
+async def invite_team_member(team_id: str, request: Request, payload: InviteRequest) -> dict[str, Any]:
+    """Invite an already-projected auth user into a team."""
     caller = _current_user(request)
-
-    password_hash = hashlib.pbkdf2_hmac("sha256", payload.password.encode(), b"aipersona-salt-v1", 100_000).hex()
     try:
         from app.core.config import get_settings
         settings = get_settings()
@@ -1600,15 +1481,12 @@ async def invite_team_member(team_id: str, request: Request, payload: RegisterRe
 
                 cur.execute("SELECT id FROM app_user WHERE email=%s", (payload.email,))
                 row = cur.fetchone()
-                if row:
-                    user_id = row["id"]
-                else:
-                    cur.execute(
-                        "INSERT INTO app_user (email, display_name, password_hash) "
-                        "VALUES (%s, %s, %s) RETURNING id",
-                        (payload.email, payload.display_name, password_hash),
+                if not row:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="该用户尚未通过 MainQuest Auth 登录本产品，请先完成一次产品登录",
                     )
-                    user_id = cur.fetchone()["id"]
+                user_id = row["id"]
                 cur.execute(
                     "INSERT INTO team_member (team_id, user_id, role) VALUES (%s, %s, 'member') "
                     "ON CONFLICT (team_id, user_id) DO NOTHING",
@@ -1616,6 +1494,8 @@ async def invite_team_member(team_id: str, request: Request, payload: RegisterRe
                 )
             conn.commit()
         return {"status": "invited", "user_id": str(user_id)}
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.warning("invite_error: %s", exc)
         raise HTTPException(status_code=500, detail="邀请失败")

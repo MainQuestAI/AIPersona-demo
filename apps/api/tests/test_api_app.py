@@ -16,7 +16,7 @@ class ApiAppConfigurationTests(unittest.TestCase):
     def test_create_app_registers_cors_middleware_for_local_web_workbench(self) -> None:
         original_env = dict(os.environ)
         try:
-            os.environ["API_CORS_ORIGINS"] = "http://127.0.0.1:5173,http://localhost:5173"
+            os.environ["API_CORS_ORIGINS"] = "http://127.0.0.1:5174,http://localhost:5174"
 
             app = create_app()
 
@@ -28,7 +28,7 @@ class ApiAppConfigurationTests(unittest.TestCase):
             self.assertIsNotNone(cors_middleware)
             self.assertEqual(
                 cors_middleware.kwargs["allow_origins"],
-                ["http://127.0.0.1:5173", "http://localhost:5173"],
+                ["http://127.0.0.1:5174", "http://localhost:5174"],
             )
             self.assertIn("GET", cors_middleware.kwargs["allow_methods"])
             self.assertIn("POST", cors_middleware.kwargs["allow_methods"])
@@ -78,6 +78,14 @@ class ApiAppConfigurationTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "ok")
+
+    def test_oauth_callback_remains_public(self) -> None:
+        app = create_app()
+        with patch("app.main.resolve_auth_context", side_effect=AssertionError("oauth callback should bypass auth")):
+            client = TestClient(app)
+            response = client.get("/api/oauth/callback")
+
+        self.assertEqual(response.status_code, 422)
 
 
 if __name__ == "__main__":

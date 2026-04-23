@@ -47,4 +47,11 @@ docs/
 ## 部署入口说明
 
 - `docker-compose.yml` 只用于本地开发，保留源码挂载、热重载和开发鉴权兜底。
-- `docker-compose.stage.yml` 才是 stage 联调用入口，默认关闭 `DEV_AUTH_FALLBACK` 与 `API_RELOAD`，Web 也改为静态构建产物服务。
+- `docker-compose.stage.yml` 才是 stage 联调用入口，默认关闭 `ENABLE_DEV_AUTH` 与 `API_RELOAD`，Web 也改为静态构建产物服务。
+
+## 认证集成口径
+
+- `MainQuest-Auth` 是唯一正式登录入口，AIpersona-demo 不再维护本地密码登录。
+- 本地 Web 默认端口为 `http://localhost:5174`，避免与 `MainQuest-Auth portal` 的 `http://localhost:5173` 冲突。
+- API OAuth 回调固定为 `http://localhost:8000/api/oauth/callback`。
+- 本地仅保留 `localhost-only Dev Auth`，正式联调和 stage 默认走 OAuth。

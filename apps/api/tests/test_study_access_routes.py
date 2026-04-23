@@ -75,7 +75,7 @@ class StudyAccessRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(self.service.list_team_ids, ["team-1"])
 
-    def test_multi_team_user_must_send_active_team_header(self) -> None:
+    def test_multi_team_user_defaults_to_first_team_when_no_shared_demo_team_is_present(self) -> None:
         with patch("app.main.resolve_auth_context", return_value=authenticated_context()):
             with patch(
                 "app.study_runtime.routes.list_user_teams",
@@ -86,8 +86,8 @@ class StudyAccessRouteTests(unittest.TestCase):
             ):
                 response = self.client.get("/studies", headers={"Authorization": "Bearer test-token"})
 
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("X-Team-Id", response.text)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.service.list_team_ids, ["team-1"])
 
     def test_rejects_team_header_outside_membership(self) -> None:
         with patch("app.main.resolve_auth_context", return_value=authenticated_context()):

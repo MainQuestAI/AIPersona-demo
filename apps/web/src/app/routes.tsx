@@ -3,9 +3,11 @@ import {
   RouterProvider,
   createBrowserRouter,
   type RouteObject,
+  useLocation,
   useParams,
   useSearchParams,
 } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 
 import { AppShell } from './layout/app-shell';
 import { CalibrationCenterPage } from './pages/calibration-center-page';
@@ -20,6 +22,65 @@ import { StudyDetailLayout } from './pages/study-detail-layout';
 import { StimulusLibraryPage } from './pages/stimulus-library-page';
 import { TwinsPlaceholder } from './pages/twins-placeholder';
 import { WorkbenchPlaceholder } from './pages/workbench-placeholder';
+import { clearAuthSession, fetchAuthSession, persistAuthSession } from './services/auth-session';
+
+function RequireAuth() {
+  const location = useLocation();
+  const [ready, setReady] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
+
+  if (typeof window === 'undefined') {
+    return <AppShell />;
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const session = await fetchAuthSession();
+        if (cancelled) {
+          return;
+        }
+        if (session) {
+          persistAuthSession(session);
+          setAuthenticated(true);
+        } else {
+          clearAuthSession();
+          setAuthenticated(false);
+        }
+      } catch {
+        if (!cancelled) {
+          clearAuthSession();
+          setAuthenticated(false);
+        }
+      } finally {
+        if (!cancelled) {
+          setReady(true);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!ready) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-bg text-text">
+        <div className="rounded-panel border border-line bg-panel px-5 py-4 text-sm text-muted shadow-panel">
+          正在检查登录状态…
+        </div>
+      </div>
+    );
+  }
+
+  if (!authenticated) {
+    const redirect = `${location.pathname}${location.search}`;
+    return <Navigate to={`/login?redirect=${encodeURIComponent(redirect)}`} replace />;
+  }
+
+  return <AppShell />;
+}
 
 function WorkbenchCompatRedirect() {
   const { studyId = '' } = useParams();
@@ -38,7 +99,7 @@ function SearchStudyRedirect({ view }: { view: 'compare' | 'twins' | 'workbench'
 export const appRoutes: RouteObject[] = [
   {
     path: '/',
-    element: <AppShell />,
+    element: <RequireAuth />,
     children: [
       {
         index: true,
