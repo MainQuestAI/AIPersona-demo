@@ -209,6 +209,20 @@
 |-----------|-------|---------|------------|
 | 2026-04-02 | `session-catchup.py` 默认路径不存在 | 1 | 改为识别 `~/.agents/skills/planning-with-files/` 下的真实路径 |
 
+## Session: 2026-04-22
+
+### 软著申请预填稿
+- **Status:** complete
+- Actions taken:
+  - 读取仓库入口文件、产品规划文档、路由与运行时接口，提炼当前产品的对外功能定义
+  - 核对 `AIpersona` 与 `MirrorWorld` 两套命名的当前使用情况，形成主申报名与备选名
+  - 统计当前程序文件总行数，作为申请表 `源程序量` 预填依据
+  - 参考现行软著登记规则，输出 `docs/softcopyright_application_draft_2026-04-22.md`
+- Files created/modified:
+  - `docs/softcopyright_application_draft_2026-04-22.md`（created）
+  - `findings.md`（updated）
+  - `progress.md`（updated）
+
 ## 5-Question Reboot Check
 | Question | Answer |
 |----------|--------|

@@ -87,6 +87,12 @@
 ## Visual/Browser Findings
 - 当前未进行浏览器或视觉检查。
 
+## 2026-04-22 软著申报预填稿
+- 已基于 `AIpersona-demo` 当前产品形态输出中国大陆软件著作权申请预填稿：`docs/softcopyright_application_draft_2026-04-22.md`。
+- 当前产品更适合以“对外品牌 + 功能名”方式申报，推荐名称为 `MirrorWorld AI消费者研究工作台软件 V0.1.0`，备选为 `AIpersona AI消费者研究工作台软件 V0.1.0`。
+- 预填稿已覆盖产品定位、主要功能、技术特点、开发/运行环境、源程序量和待人工确认字段。
+- 其中 `开发完成日期` 暂按当前仓库最后一轮完整功能合并时间 `2026-04-21` 建议填写；`首次发表日期` 暂按“未发表”处理。
+
 ---
 *Update this file after every 2 view/browser/search operations*
 *This prevents visual information from being lost*
