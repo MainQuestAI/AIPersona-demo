@@ -1,6 +1,8 @@
 export type LatestStudySession = {
   id: string;
   businessQuestion?: string | null;
+  status?: string | null;
+  currentRunStatus?: string | null;
   updatedAt: string;
 };
 
@@ -36,12 +38,14 @@ export function getActiveStudyId(pathname: string, search: string): string {
 }
 
 export function rememberLatestStudySession(
-  session: { id: string; businessQuestion?: string | null },
+  session: { id: string; businessQuestion?: string | null; status?: string | null; currentRunStatus?: string | null },
   storage?: Storage,
 ): LatestStudySession {
   const payload: LatestStudySession = {
     id: session.id,
     businessQuestion: session.businessQuestion ?? null,
+    status: session.status ?? null,
+    currentRunStatus: session.currentRunStatus ?? null,
     updatedAt: new Date().toISOString(),
   };
   const targetStorage = getStorage(storage);

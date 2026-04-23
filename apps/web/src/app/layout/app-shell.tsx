@@ -5,7 +5,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { APP_ROUTES, STUDY_DETAIL_VIEWS } from '@/types/route';
 import { useLatestStudySession } from '../hooks/useLatestStudySession';
 import { useShellUiStore } from '../providers';
-import { buildStudyRoute } from '../services/studyRuntimeViews';
+import { buildStudyRoute, translateStatus } from '../services/studyRuntimeViews';
 import { getActiveStudyId } from '../services/studySession';
 import { GlobalRail } from './global-rail';
 import { ToastContainer } from './toast-container';
@@ -97,7 +97,7 @@ export function AppShell({ children }: AppShellProps) {
               <div className="border-t border-line px-6 py-3 sm:px-8">
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="rounded-btn border border-accent/30 bg-accentSoft px-3 py-1 eyebrow text-accent">
-                    研究进行中
+                    {translateStatus(latestStudy?.currentRunStatus ?? latestStudy?.status)}
                   </div>
                   {latestStudy?.businessQuestion ? (
                     <div className="max-w-xs truncate text-sm text-muted">

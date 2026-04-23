@@ -185,6 +185,8 @@ export function TwinsPlaceholder() {
         rememberLatestStudySession({
           id: projection.study.id,
           businessQuestion: projection.study.business_question,
+          status: projection.study.status,
+          currentRunStatus: projection.current_run?.status,
         });
         setState({ status: 'ready', projection });
       } catch (error) {

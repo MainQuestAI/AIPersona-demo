@@ -301,6 +301,8 @@ export function WorkbenchPlaceholder() {
         rememberLatestStudySession({
           id: projection.study.id,
           businessQuestion: projection.study.business_question,
+          status: projection.study.status,
+          currentRunStatus: projection.current_run?.status,
         });
         setState({ status: 'ready', projection });
       } catch (error) {
@@ -365,6 +367,7 @@ export function WorkbenchPlaceholder() {
       rememberLatestStudySession({
         id: bundle.study.id,
         businessQuestion: bundle.study.business_question,
+        status: bundle.study.status,
       });
       // Start agent conversation
       try {

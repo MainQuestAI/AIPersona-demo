@@ -88,6 +88,7 @@ export function DashboardPage() {
       rememberLatestStudySession({
         id: bundle.study.id,
         businessQuestion: bundle.study.business_question,
+        status: bundle.study.status,
       });
       try { await startAgent(bundle.study.id); } catch { /* non-blocking */ }
       navigate(`/studies/${bundle.study.id}/workbench`);
