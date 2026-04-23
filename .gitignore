@@ -4,6 +4,7 @@ dist/
 .DS_Store
 .env
 .env.compose
+.env.stage
 .env.local
 .env.*.local
 .venv/
