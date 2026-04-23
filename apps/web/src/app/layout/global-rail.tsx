@@ -1,15 +1,37 @@
+import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, LogIn, LogOut, Moon, ScanEye, Sun, X } from 'lucide-react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { APP_ROUTES } from '@/types/route';
+import {
+  clearAuthSession,
+  getActiveTeamId,
+  readStoredTeams,
+  readStoredUser,
+  setActiveTeamId,
+  type AuthTeam,
+  type AuthUser,
+} from '../services/auth-session';
 import { useShellUiStore } from '../providers';
 
 function UserStatusArea({ collapsed }: { collapsed: boolean }) {
   const navigate = useNavigate();
-  let user: { display_name?: string; email?: string } | null = null;
-  try {
-    const raw = localStorage.getItem('aipersona_user');
-    if (raw) user = JSON.parse(raw);
-  } catch { /* ignore */ }
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [teams, setTeams] = useState<AuthTeam[]>([]);
+  const [activeTeamId, setActiveTeamIdState] = useState('');
+
+  useEffect(() => {
+    function syncSessionState() {
+      setUser(readStoredUser());
+      setTeams(readStoredTeams());
+      setActiveTeamIdState(getActiveTeamId());
+    }
+
+    syncSessionState();
+    window.addEventListener('storage', syncSessionState);
+    return () => {
+      window.removeEventListener('storage', syncSessionState);
+    };
+  }, []);
 
   if (!user || !user.display_name) {
     return (
@@ -28,22 +50,49 @@ function UserStatusArea({ collapsed }: { collapsed: boolean }) {
   const initial = (user.display_name || '?')[0].toUpperCase();
   return (
     <div className="flex items-center gap-3 rounded-card px-3 py-3">
-      <div className="h-8 w-8 shrink-0 rounded-full bg-accent/20 flex items-center justify-center text-xs font-bold text-accent">
+        <div className="h-8 w-8 shrink-0 rounded-full bg-accent/20 flex items-center justify-center text-xs font-bold text-accent">
         {initial}
       </div>
       {!collapsed ? (
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium text-text truncate">{user.display_name}</div>
-          <div className="text-[0.6rem] text-tertiary truncate">{user.email}</div>
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className="min-w-0">
+            <div className="text-sm font-medium text-text truncate">{user.display_name}</div>
+            <div className="text-[0.6rem] text-tertiary truncate">{user.email}</div>
+          </div>
+          {teams.length > 1 ? (
+            <label className="block">
+              <span className="mb-1 block text-[0.6rem] uppercase tracking-[0.14em] text-tertiary">
+                当前团队
+              </span>
+              <select
+                value={activeTeamId}
+                onChange={(event) => {
+                  const nextTeamId = event.target.value;
+                  setActiveTeamId(nextTeamId);
+                  setActiveTeamIdState(nextTeamId);
+                  window.location.reload();
+                }}
+                className="w-full rounded-btn border border-line bg-panel px-2 py-2 text-xs text-text focus:border-accent/50 focus:outline-none"
+              >
+                {teams.map((team) => (
+                  <option key={team.id} value={team.id}>
+                    {team.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : teams[0] ? (
+            <div className="text-[0.65rem] text-tertiary truncate">
+              团队：{teams[0].name}
+            </div>
+          ) : null}
         </div>
       ) : null}
       {!collapsed ? (
         <button
           type="button"
           onClick={() => {
-            localStorage.removeItem('aipersona_token');
-            localStorage.removeItem('aipersona_user');
-            localStorage.removeItem('aipersona_teams');
+            clearAuthSession();
             navigate('/login');
           }}
           className="text-muted hover:text-danger transition"

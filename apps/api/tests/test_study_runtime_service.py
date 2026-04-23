@@ -45,6 +45,8 @@ class InMemoryStudyRuntimeRepository:
             "target_groups": list(command.target_groups),
             "status": "draft",
             "owner_team_id": command.owner_team_id,
+            "team_id": command.team_id,
+            "owner_user_id": command.owner_user_id,
         }
         plan = {
             "id": study_plan_id,
@@ -78,9 +80,11 @@ class InMemoryStudyRuntimeRepository:
         self.plan_versions[version_id] = version
         return {"study": study, "study_plan": plan, "study_plan_version": version}
 
-    def get_study_bundle(self, study_id: str) -> dict[str, Any] | None:
+    def get_study_bundle(self, study_id: str, team_id: str | None = None) -> dict[str, Any] | None:
         study = self.studies.get(study_id)
         if study is None:
+            return None
+        if team_id and (study.get("team_id") or study.get("owner_team_id")) != team_id:
             return None
         plan = self.study_plans[study_id]
         versions = [v for v in self.plan_versions.values() if v["study_id"] == study_id]
@@ -176,11 +180,22 @@ class InMemoryStudyRuntimeRepository:
         run["failure_reason"] = reason
         self.failed_runs.append((study_id, run_id, reason))
 
-    def get_run(self, study_id: str, run_id: str) -> dict[str, Any] | None:
+    def get_run(self, study_id: str, run_id: str, team_id: str | None = None) -> dict[str, Any] | None:
         run = self.study_runs.get(run_id)
         if run and run["study_id"] == study_id:
+            if team_id and (self.studies[study_id].get("team_id") or self.studies[study_id].get("owner_team_id")) != team_id:
+                return None
             return dict(run)
         return None
+
+    def list_studies(self, team_id: str | None = None) -> list[dict[str, Any]]:
+        studies = list(self.studies.values())
+        if team_id:
+            studies = [
+                study for study in studies
+                if (study.get("team_id") or study.get("owner_team_id")) == team_id
+            ]
+        return [dict(study) for study in studies]
 
 
 class RaisingWorkflowGateway(FakeWorkflowGateway):
@@ -226,6 +241,9 @@ class StudyRuntimeServiceTests(unittest.TestCase):
             quant_config={"mode": "ssr"},
             generated_by="boss",
             estimated_cost=Decimal("88.50"),
+            owner_user_id="user-1",
+            team_id="team-1",
+            owner_team_id="team-1",
         )
 
         result = self.service.create_study(command)
@@ -249,6 +267,9 @@ class StudyRuntimeServiceTests(unittest.TestCase):
                 qual_config={"mode": "ai_idi"},
                 quant_config={"mode": "ssr"},
                 generated_by="boss",
+                owner_user_id="user-1",
+                team_id="team-1",
+                owner_team_id="team-1",
             )
         )
         study_id = created["study"]["id"]
@@ -290,6 +311,9 @@ class StudyRuntimeServiceTests(unittest.TestCase):
                 qual_config={"mode": "ai_idi"},
                 quant_config={"mode": "ssr"},
                 generated_by="boss",
+                owner_user_id="user-1",
+                team_id="team-1",
+                owner_team_id="team-1",
             )
         )
         study_id = created["study"]["id"]
@@ -350,6 +374,9 @@ class StudyRuntimeServiceTests(unittest.TestCase):
                 qual_config={"mode": "ai_idi"},
                 quant_config={"mode": "ssr"},
                 generated_by="boss",
+                owner_user_id="user-1",
+                team_id="team-1",
+                owner_team_id="team-1",
             )
         )
         study_id = created["study"]["id"]
@@ -403,6 +430,9 @@ class StudyRuntimeServiceTests(unittest.TestCase):
                 qual_config={"mode": "ai_idi"},
                 quant_config={"mode": "ssr"},
                 generated_by="boss",
+                owner_user_id="user-1",
+                team_id="team-1",
+                owner_team_id="team-1",
             )
         )
         study_id = created["study"]["id"]
@@ -456,6 +486,9 @@ class StudyRuntimeServiceTests(unittest.TestCase):
                 qual_config={"mode": "ai_idi"},
                 quant_config={"mode": "ssr"},
                 generated_by="boss",
+                owner_user_id="user-1",
+                team_id="team-1",
+                owner_team_id="team-1",
             )
         )
         study_id = created["study"]["id"]

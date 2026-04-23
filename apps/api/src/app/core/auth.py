@@ -46,6 +46,14 @@ class AuthContext:
     api_key_scope: str | None = None
 
 
+@dataclass(frozen=True)
+class TeamMembership:
+    id: str
+    name: str
+    slug: str
+    member_role: str
+
+
 def hash_secret(secret: str) -> str:
     return hashlib.sha256(secret.encode()).hexdigest()
 
@@ -67,6 +75,45 @@ def _development_session_user(
         display_name=display_name,
         role="owner",
     )
+
+
+def list_user_teams(*, database_url: str, user_id: str) -> list[TeamMembership]:
+    if development_auth_enabled() and user_id == DEV_FALLBACK_USER_ID:
+        return [
+            TeamMembership(
+                id=DEV_FALLBACK_TEAM_ID,
+                name="MirrorWorld Demo Team",
+                slug="mirrorworld-demo-team",
+                member_role="owner",
+            )
+        ]
+
+    try:
+        with connect_auth_database(database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT t.id, t.name, t.slug, tm.role AS member_role
+                    FROM team_member tm
+                    JOIN team t ON t.id = tm.team_id
+                    WHERE tm.user_id = %s
+                    ORDER BY tm.joined_at, t.created_at
+                    """,
+                    (user_id,),
+                )
+                rows = cursor.fetchall()
+    except Exception as exc:
+        raise AuthUnavailableError("failed to load user teams") from exc
+
+    return [
+        TeamMembership(
+            id=str(row["id"]),
+            name=str(row["name"]),
+            slug=str(row["slug"]),
+            member_role=str(row["member_role"]),
+        )
+        for row in rows
+    ]
 
 
 def build_development_auth_response(

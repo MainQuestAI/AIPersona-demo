@@ -39,7 +39,12 @@ docs/
 
 - `docs/handoff.md`
 - `docs/setup/local_docker_environment.md`
+- `docs/setup/stage_docker_environment.md`
 - `docs/planning/project_takeover_development_plan.md`
 - `docs/planning/detailed_work_packages.md`
 - `docs/planning/wave0_execution_checklists_a01_w01_r01.md`
-- `docs/deployment/resource-inventory-2026-04-13.md`
+
+## 部署入口说明
+
+- `docker-compose.yml` 只用于本地开发，保留源码挂载、热重载和开发鉴权兜底。
+- `docker-compose.stage.yml` 才是 stage 联调用入口，默认关闭 `DEV_AUTH_FALLBACK` 与 `API_RELOAD`，Web 也改为静态构建产物服务。

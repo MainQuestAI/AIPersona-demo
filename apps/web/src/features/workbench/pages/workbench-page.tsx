@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronDown, Info, Loader2 } from 'lucide-react';
 
 import { buildStudyRoute } from '@/app/services/studyRuntimeViews';
-import { resolveRuntimeApiBase } from '@/app/services/runtimeApiBase';
+import { openStudyReportWindow } from '@/app/services/reportWindow';
 import {
   fetchAgentMessages,
   listStudyMemories,
@@ -140,8 +140,7 @@ export function WorkbenchPage({
     if (action === 'open_report') {
       const hasReport = projection.artifacts?.some((a) => a.artifact_type === 'report' && a.status === 'ready');
       if (hasReport) {
-        const base = resolveRuntimeApiBase();
-        window.open(`${base}/studies/${encodeURIComponent(studyId)}/report`, '_blank');
+        await openStudyReportWindow(studyId);
       }
       return;
     }

@@ -57,11 +57,6 @@ PUBLIC_PATHS = {
     "/health",
     "/healthz",
 }
-PUBLIC_PATH_SUFFIXES = (
-    "/share",
-    "/replay",
-    "/report",
-)
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -71,8 +66,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
         settings = request.app.state.settings
         path = request.url.path
 
-        if any(path.endswith(s) for s in PUBLIC_PATH_SUFFIXES):
-            return await call_next(request)
         if path in PUBLIC_PATHS:
             return await call_next(request)
         if request.method == "OPTIONS":

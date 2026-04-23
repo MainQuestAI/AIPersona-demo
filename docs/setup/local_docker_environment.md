@@ -4,6 +4,11 @@
 日期：2026-04-13  
 状态：当前默认开发方案
 
+补充说明：
+
+- 本文档只覆盖本地开发入口。
+- stage 联调请改用 `docker-compose.stage.yml`，见 `docs/setup/stage_docker_environment.md`。
+
 ## 1. 目标
 
 把项目开发环境从：

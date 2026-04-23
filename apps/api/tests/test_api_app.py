@@ -49,6 +49,18 @@ class ApiAppConfigurationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 401)
         self.assertIn("Authentication required", response.text)
 
+    def test_share_report_and_replay_routes_are_no_longer_public(self) -> None:
+        app = create_app()
+        with patch("app.main.resolve_auth_context", side_effect=MissingCredentialsError("missing")):
+            client = TestClient(app)
+            share_response = client.get("/studies/study-1/share")
+            report_response = client.get("/studies/study-1/report")
+            replay_response = client.get("/studies/study-1/replay")
+
+        self.assertEqual(share_response.status_code, 401)
+        self.assertEqual(report_response.status_code, 401)
+        self.assertEqual(replay_response.status_code, 401)
+
     def test_protected_routes_fail_closed_when_auth_backend_is_unavailable(self) -> None:
         app = create_app()
         with patch("app.main.resolve_auth_context", side_effect=AuthUnavailableError("db down")):

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   approvePlan,
   createDemoStudy,
+  fetchStudyReportHtml,
   fetchWorkbenchProjection,
   listConsumerTwins,
   listStudies,
@@ -82,6 +83,7 @@ describe('studyRuntime service', () => {
       ),
     );
     globalThis.localStorage.setItem('aipersona_token', 'token-123');
+    globalThis.localStorage.setItem('aipersona_teams', JSON.stringify([{ id: 'team-123', name: 'Stage Team' }]));
 
     await fetchWorkbenchProjection('study-1');
 
@@ -94,6 +96,7 @@ describe('studyRuntime service', () => {
     );
     const headers = fetchMock.mock.calls[0]?.[1]?.headers as Headers;
     expect(headers.get('Authorization')).toBe('Bearer token-123');
+    expect(headers.get('X-Team-Id')).toBe('team-123');
   });
 
   it('creates a demo study and returns the runtime bundle', async () => {
@@ -307,7 +310,7 @@ describe('studyRuntime service', () => {
     expect(studies[0]?.brand).toBe('MirrorWorld Demo');
   });
 
-  it('submits plan approval with the actor payload', async () => {
+  it('submits plan approval without trusting the actor payload', async () => {
     const fetchMock = vi.mocked(globalThis.fetch);
     fetchMock.mockResolvedValue(
       new Response(JSON.stringify({ status: 'requested' }), { status: 200 }),
@@ -319,7 +322,7 @@ describe('studyRuntime service', () => {
       'http://127.0.0.1:8000/studies/study-1/plan-versions/version-1/submit',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ actor: 'boss' }),
+        body: JSON.stringify({}),
       }),
     );
   });
@@ -336,7 +339,7 @@ describe('studyRuntime service', () => {
       'http://127.0.0.1:8000/studies/study-1/plan-versions/version-1/approve',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ actor: 'boss', decision_comment: 'go' }),
+        body: JSON.stringify({ decision_comment: 'go' }),
       }),
     );
   });
@@ -353,7 +356,6 @@ describe('studyRuntime service', () => {
         method: 'POST',
         body: JSON.stringify({
           study_plan_version_id: 'version-1',
-          requested_by: 'boss',
         }),
       }),
     );
@@ -371,8 +373,26 @@ describe('studyRuntime service', () => {
       'http://127.0.0.1:8000/studies/study-1/runs/run-1/resume',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ actor: 'boss', action: 'continue', decision_comment: 'continue' }),
+        body: JSON.stringify({ action: 'continue', decision_comment: 'continue' }),
       }),
     );
+  });
+
+  it('fetches report html with authenticated text request headers', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch);
+    fetchMock.mockResolvedValue(new Response('<html><body>report</body></html>', { status: 200 }));
+    globalThis.localStorage.setItem('aipersona_token', 'token-123');
+    globalThis.localStorage.setItem('aipersona_teams', JSON.stringify([{ id: 'team-123', name: 'Stage Team' }]));
+
+    const html = await fetchStudyReportHtml('study-1');
+
+    expect(html).toContain('report');
+    const headers = fetchMock.mock.calls[0]?.[1]?.headers as Headers;
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:8000/studies/study-1/report',
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+    expect(headers.get('Authorization')).toBe('Bearer token-123');
+    expect(headers.get('X-Team-Id')).toBe('team-123');
   });
 });

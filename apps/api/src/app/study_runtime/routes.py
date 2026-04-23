@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import hashlib
 import logging
 import secrets
@@ -17,11 +18,13 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 from app.core.auth import (
+    AuthUnavailableError,
     SessionUser,
     build_development_auth_response,
     connect_auth_database,
     create_session_token,
     development_auth_enabled,
+    list_user_teams,
 )
 from app.study_runtime.projections import build_workbench_projection
 from app.study_runtime.streaming import create_llm_stream, model_supports_thinking
@@ -52,6 +55,67 @@ def _current_user(request: Request) -> SessionUser:
     return user
 
 
+@dataclass(frozen=True)
+class ActiveTeamContext:
+    user: SessionUser
+    team_id: str
+    team_name: str
+    team_slug: str
+    member_role: str
+
+
+def _actor_label(user: SessionUser) -> str:
+    if user.display_name.strip():
+        return user.display_name.strip()
+    if user.email.strip():
+        return user.email.strip()
+    return user.id
+
+
+def get_active_team_context(request: Request) -> ActiveTeamContext:
+    cached = getattr(request.state, "active_team_context", None)
+    if cached is not None:
+        return cached
+
+    user = _current_user(request)
+    settings = request.app.state.settings
+    try:
+        teams = list_user_teams(database_url=settings.database_url, user_id=user.id)
+    except AuthUnavailableError as exc:
+        raise HTTPException(status_code=503, detail="团队信息服务暂不可用") from exc
+    if not teams:
+        raise HTTPException(status_code=403, detail="当前账号尚未加入任何团队")
+
+    requested_team_id = (request.headers.get("X-Team-Id") or "").strip()
+    if requested_team_id:
+        team = next((item for item in teams if item.id == requested_team_id), None)
+        if team is None:
+            raise HTTPException(status_code=403, detail="当前账号无权访问该团队")
+    elif len(teams) == 1:
+        team = teams[0]
+    else:
+        raise HTTPException(status_code=400, detail="多团队账号必须显式指定 X-Team-Id")
+
+    context = ActiveTeamContext(
+        user=user,
+        team_id=team.id,
+        team_name=team.name,
+        team_slug=team.slug,
+        member_role=team.member_role,
+    )
+    request.state.active_team_context = context
+    return context
+
+
+def _require_study_bundle(
+    service: StudyRuntimeService,
+    *,
+    study_id: str,
+    team_id: str,
+) -> dict[str, Any]:
+    return service.get_study_bundle(study_id, team_id=team_id)
+
+
 def _build_unique_team_slug(cursor: Any, team_name: str) -> str:
     base_slug = team_name.lower().replace(" ", "-")[:50] or "team"
     slug = base_slug
@@ -76,7 +140,7 @@ class CreateStudyRequest(BaseModel):
     stimulus_ids: list[str]
     qual_config: dict[str, Any]
     quant_config: dict[str, Any]
-    generated_by: str
+    generated_by: Optional[str] = None
     owner_team_id: Optional[str] = None
     anchor_set_id: Optional[str] = None
     agent_config_ids: list[str] = Field(default_factory=list)
@@ -85,14 +149,14 @@ class CreateStudyRequest(BaseModel):
 
 
 class DecisionRequest(BaseModel):
-    actor: str
+    actor: Optional[str] = None
     action: str = "continue"
     decision_comment: Optional[str] = None
 
 
 class StartRunRequest(BaseModel):
     study_plan_version_id: str
-    requested_by: str
+    requested_by: Optional[str] = None
 
 
 class AssetImportRequest(BaseModel):
@@ -121,39 +185,65 @@ def get_study_runtime_service(request: Request) -> StudyRuntimeService:
 async def create_study(
     payload: CreateStudyRequest,
     service: StudyRuntimeService = Depends(get_study_runtime_service),
+    team_context: ActiveTeamContext = Depends(get_active_team_context),
 ) -> dict[str, Any]:
-    return service.create_study(CreateStudyCommand(**payload.model_dump()))
+    return service.create_study(
+        CreateStudyCommand(
+            business_question=payload.business_question,
+            study_type=payload.study_type,
+            brand=payload.brand,
+            category=payload.category,
+            target_groups=payload.target_groups,
+            business_goal=payload.business_goal,
+            twin_version_ids=payload.twin_version_ids,
+            stimulus_ids=payload.stimulus_ids,
+            qual_config=payload.qual_config,
+            quant_config=payload.quant_config,
+            generated_by=_actor_label(team_context.user),
+            owner_user_id=team_context.user.id,
+            team_id=team_context.team_id,
+            owner_team_id=team_context.team_id,
+            anchor_set_id=payload.anchor_set_id,
+            agent_config_ids=payload.agent_config_ids,
+            estimated_cost=payload.estimated_cost,
+            approval_required=payload.approval_required,
+        )
+    )
 
 
 @router.get("/studies")
 async def list_studies(
     service: StudyRuntimeService = Depends(get_study_runtime_service),
+    team_context: ActiveTeamContext = Depends(get_active_team_context),
 ) -> list[dict[str, Any]]:
-    return service.list_studies()
+    return service.list_studies(team_id=team_context.team_id)
 
 
 @router.get("/studies/{study_id}")
 async def get_study_bundle(
     study_id: str,
     service: StudyRuntimeService = Depends(get_study_runtime_service),
+    team_context: ActiveTeamContext = Depends(get_active_team_context),
 ) -> dict[str, Any]:
-    return service.get_study_bundle(study_id)
+    return service.get_study_bundle(study_id, team_id=team_context.team_id)
 
 
 @router.get("/studies/{study_id}/detail")
 async def get_study_detail(
     study_id: str,
     service: StudyRuntimeService = Depends(get_study_runtime_service),
+    team_context: ActiveTeamContext = Depends(get_active_team_context),
 ) -> dict[str, Any]:
-    return service.get_study_detail(study_id)
+    return service.get_study_detail(study_id, team_id=team_context.team_id)
 
 
 @router.get("/studies/{study_id}/workbench")
 async def get_workbench_projection(
     study_id: str,
     service: StudyRuntimeService = Depends(get_study_runtime_service),
+    team_context: ActiveTeamContext = Depends(get_active_team_context),
 ) -> dict[str, Any]:
-    return build_workbench_projection(service.get_study_bundle(study_id))
+    return build_workbench_projection(service.get_study_bundle(study_id, team_id=team_context.team_id))
 
 
 @router.post("/studies/{study_id}/plan-versions/{version_id}/submit")
@@ -162,12 +252,14 @@ async def submit_plan_for_approval(
     version_id: str,
     payload: DecisionRequest,
     service: StudyRuntimeService = Depends(get_study_runtime_service),
+    team_context: ActiveTeamContext = Depends(get_active_team_context),
 ) -> dict[str, Any]:
+    _require_study_bundle(service, study_id=study_id, team_id=team_context.team_id)
     return service.submit_plan_for_approval(
         SubmitPlanForApprovalCommand(
             study_id=study_id,
             study_plan_version_id=version_id,
-            requested_by=payload.actor,
+            requested_by=_actor_label(team_context.user),
         )
     )
 
@@ -178,12 +270,14 @@ async def approve_plan(
     version_id: str,
     payload: DecisionRequest,
     service: StudyRuntimeService = Depends(get_study_runtime_service),
+    team_context: ActiveTeamContext = Depends(get_active_team_context),
 ) -> dict[str, Any]:
+    _require_study_bundle(service, study_id=study_id, team_id=team_context.team_id)
     return service.approve_plan(
         ApprovalDecision(
             study_id=study_id,
             study_plan_version_id=version_id,
-            approved_by=payload.actor,
+            approved_by=_actor_label(team_context.user),
             decision_comment=payload.decision_comment,
         )
     )
@@ -194,12 +288,14 @@ async def start_run(
     study_id: str,
     payload: StartRunRequest,
     service: StudyRuntimeService = Depends(get_study_runtime_service),
+    team_context: ActiveTeamContext = Depends(get_active_team_context),
 ) -> dict[str, Any]:
+    _require_study_bundle(service, study_id=study_id, team_id=team_context.team_id)
     return service.start_run(
         StartRunCommand(
             study_id=study_id,
             study_plan_version_id=payload.study_plan_version_id,
-            requested_by=payload.requested_by,
+            requested_by=_actor_label(team_context.user),
         )
     )
 
@@ -209,8 +305,10 @@ async def get_run(
     study_id: str,
     run_id: str,
     service: StudyRuntimeService = Depends(get_study_runtime_service),
+    team_context: ActiveTeamContext = Depends(get_active_team_context),
 ) -> dict[str, Any]:
-    return service.get_run(study_id, run_id)
+    _require_study_bundle(service, study_id=study_id, team_id=team_context.team_id)
+    return service.get_run(study_id, run_id, team_id=team_context.team_id)
 
 
 @router.post("/studies/{study_id}/runs/{run_id}/resume")
@@ -219,12 +317,14 @@ async def resume_run(
     run_id: str,
     payload: DecisionRequest,
     service: StudyRuntimeService = Depends(get_study_runtime_service),
+    team_context: ActiveTeamContext = Depends(get_active_team_context),
 ) -> dict[str, Any]:
+    _require_study_bundle(service, study_id=study_id, team_id=team_context.team_id)
     return service.resume_run(
         ResumeRunCommand(
             study_id=study_id,
             study_run_id=run_id,
-            approved_by=payload.actor,
+            approved_by=_actor_label(team_context.user),
             action=payload.action,
             decision_comment=payload.decision_comment,
         )
@@ -605,10 +705,11 @@ async def list_drift_alerts() -> list[dict[str, Any]]:
 @router.get("/memories")
 async def list_all_memories(
     service: StudyRuntimeService = Depends(get_study_runtime_service),
+    team_context: ActiveTeamContext = Depends(get_active_team_context),
 ) -> list[dict[str, Any]]:
     """List all active study memories across all studies."""
     try:
-        return service.repository.list_all_memories()
+        return service.repository.list_team_memories(team_context.team_id)
     except Exception:
         return []  # Memory table may not exist yet
 
@@ -617,8 +718,10 @@ async def list_all_memories(
 async def list_study_memories(
     study_id: str,
     service: StudyRuntimeService = Depends(get_study_runtime_service),
+    team_context: ActiveTeamContext = Depends(get_active_team_context),
 ) -> list[dict[str, Any]]:
     """List memories extracted from a specific study."""
+    _require_study_bundle(service, study_id=study_id, team_id=team_context.team_id)
     try:
         return service.repository.list_study_memories(study_id)
     except Exception:
@@ -630,9 +733,10 @@ async def generate_podcast(
     request: Request,
     study_id: str,
     service: StudyRuntimeService = Depends(get_study_runtime_service),
+    team_context: ActiveTeamContext = Depends(get_active_team_context),
 ) -> dict[str, Any]:
     """Generate an AI podcast script from research findings using LLM."""
-    bundle = service.get_study_bundle(study_id)
+    bundle = service.get_study_bundle(study_id, team_id=team_context.team_id)
     projection = build_workbench_projection(bundle)
     bq = projection["study"].get("business_question", "未知")
 
@@ -699,9 +803,10 @@ async def generate_podcast(
 async def study_replay_page(
     study_id: str,
     service: StudyRuntimeService = Depends(get_study_runtime_service),
+    team_context: ActiveTeamContext = Depends(get_active_team_context),
 ) -> HTMLResponse:
-    """Public replay page showing research stages, decisions, and key moments."""
-    bundle = service.get_study_bundle(study_id)
+    """Protected replay page showing research stages, decisions, and key moments."""
+    bundle = service.get_study_bundle(study_id, team_id=team_context.team_id)
     projection = build_workbench_projection(bundle)
     bq = projection["study"].get("business_question", "未知")
     status = projection["study"].get("status", "未知")
@@ -786,9 +891,10 @@ h1{{font-size:1.5rem;font-weight:600;color:#fff;margin-bottom:.5rem}}
 async def download_study_report(
     study_id: str,
     service: StudyRuntimeService = Depends(get_study_runtime_service),
+    team_context: ActiveTeamContext = Depends(get_active_team_context),
 ) -> HTMLResponse:
     """Download the study report as an HTML file."""
-    bundle = service.get_study_bundle(study_id)
+    bundle = service.get_study_bundle(study_id, team_id=team_context.team_id)
     artifacts = bundle.get("artifacts", [])
     report_artifact = next(
         (a for a in artifacts if a.get("artifact_type") == "report" and a.get("status") == "ready"),
@@ -808,9 +914,10 @@ async def download_study_report(
 async def share_study_results(
     study_id: str,
     service: StudyRuntimeService = Depends(get_study_runtime_service),
+    team_context: ActiveTeamContext = Depends(get_active_team_context),
 ) -> HTMLResponse:
-    """Public shareable view of study results. No auth required."""
-    bundle = service.get_study_bundle(study_id)
+    """Protected shareable view of study results."""
+    bundle = service.get_study_bundle(study_id, team_id=team_context.team_id)
     study = bundle.get("study", {})
     artifacts = bundle.get("artifacts", [])
     bq = study.get("business_question", "AI 消费者研究")
@@ -902,9 +1009,10 @@ async def chat_with_study(
     study_id: str,
     payload: ChatRequest,
     service: StudyRuntimeService = Depends(get_study_runtime_service),
+    team_context: ActiveTeamContext = Depends(get_active_team_context),
 ) -> dict[str, str]:
     """Chat about a study using its research artifacts as context."""
-    bundle = service.get_study_bundle(study_id)
+    bundle = service.get_study_bundle(study_id, team_id=team_context.team_id)
     projection = build_workbench_projection(bundle)
 
     # Build context from artifacts
@@ -981,8 +1089,10 @@ async def get_agent_messages(
     study_id: str,
     after: Optional[str] = None,
     service: StudyRuntimeService = Depends(get_study_runtime_service),
+    team_context: ActiveTeamContext = Depends(get_active_team_context),
 ) -> dict[str, Any]:
     """Poll for agent conversation messages."""
+    _require_study_bundle(service, study_id=study_id, team_id=team_context.team_id)
     messages = service.repository.get_study_messages(study_id, after_id=after)
     return {"messages": messages}
 
@@ -1000,8 +1110,11 @@ async def reply_to_agent(
     study_id: str,
     payload: AgentReplyRequest,
     service: StudyRuntimeService = Depends(get_study_runtime_service),
+    team_context: ActiveTeamContext = Depends(get_active_team_context),
 ) -> dict[str, Any]:
     """User replies to an agent action_request or sends a free-form message."""
+    actor_label = _actor_label(team_context.user)
+    bundle = service.get_study_bundle(study_id, team_id=team_context.team_id)
     # Write user message
     service.repository.create_study_message(
         study_id, "user", payload.action_label or payload.action,
@@ -1017,7 +1130,6 @@ async def reply_to_agent(
         ),
     )
 
-    bundle = service.get_study_bundle(study_id)
     current_run = None
     for run in bundle.get("study_runs", []):
         if run.get("status") in ("running", "queued", "awaiting_midrun_approval"):
@@ -1041,14 +1153,27 @@ async def reply_to_agent(
         approval_status = latest_version.get("approval_status", "draft")
         if approval_status == "draft":
             service.submit_plan_for_approval(
-                SubmitPlanForApprovalCommand(study_id=study_id, study_plan_version_id=v_id, requested_by="boss")
+                SubmitPlanForApprovalCommand(
+                    study_id=study_id,
+                    study_plan_version_id=v_id,
+                    requested_by=actor_label,
+                )
             )
         if approval_status in ("draft", "pending_approval"):
             service.approve_plan(
-                ApprovalDecision(study_id=study_id, study_plan_version_id=v_id, approved_by="boss", decision_comment="Confirmed via agent")
+                ApprovalDecision(
+                    study_id=study_id,
+                    study_plan_version_id=v_id,
+                    approved_by=actor_label,
+                    decision_comment="Confirmed via agent",
+                )
             )
         run = service.start_run(
-            StartRunCommand(study_id=study_id, study_plan_version_id=v_id, requested_by="boss"),
+            StartRunCommand(
+                study_id=study_id,
+                study_plan_version_id=v_id,
+                requested_by=actor_label,
+            ),
             workflow_type="agent",
         )
         return {"status": "started", "run_id": str(run.get("id", ""))}
@@ -1110,7 +1235,7 @@ async def reply_to_agent(
             paused_run = service.repository.pause_run_for_adjustment(
                 study_id=study_id,
                 run_id=str(current_run["id"]),
-                actor="boss",
+                actor=actor_label,
                 decision_comment=payload.comment or payload.action_label or payload.action,
             )
             service.repository.create_study_message(
@@ -1129,7 +1254,7 @@ async def reply_to_agent(
         if workflow_id:
             service.gateway.resume_study_run(
                 workflow_id=workflow_id,
-                approved_by="boss",
+                approved_by=actor_label,
                 action=payload.action,
                 decision_comment=payload.comment or payload.action_label or payload.action,
             )
@@ -1202,9 +1327,10 @@ async def reply_to_agent(
 async def start_agent(
     study_id: str,
     service: StudyRuntimeService = Depends(get_study_runtime_service),
+    team_context: ActiveTeamContext = Depends(get_active_team_context),
 ) -> dict[str, Any]:
     """Present research plan for user confirmation. Does NOT auto-approve or start workflow."""
-    bundle = service.get_study_bundle(study_id)
+    bundle = service.get_study_bundle(study_id, team_id=team_context.team_id)
     study = bundle.get("study", {})
     bq = study.get("business_question", "未命名研究")
 

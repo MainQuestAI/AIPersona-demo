@@ -1,6 +1,7 @@
 import { Loader2, LogIn } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { persistAuthSession } from '../services/auth-session';
 import { resolveRuntimeApiBase } from '../services/runtimeApiBase';
 
 const API_BASE = resolveRuntimeApiBase();
@@ -8,20 +9,6 @@ const AUTH_REQUEST_TIMEOUT_MS = 8_000;
 const DEV_FALLBACK_TOKEN = 'apt_dev_local_demo';
 
 type AuthMode = 'login' | 'register';
-
-function persistAuthSession(data: {
-  token?: string;
-  user?: Record<string, unknown>;
-  teams?: unknown[];
-}) {
-  localStorage.setItem('aipersona_token', data.token ?? '');
-  localStorage.setItem('aipersona_user', JSON.stringify(data.user ?? {}));
-  if (data.teams?.length) {
-    localStorage.setItem('aipersona_teams', JSON.stringify(data.teams));
-  } else {
-    localStorage.removeItem('aipersona_teams');
-  }
-}
 
 export function LoginPage() {
   const navigate = useNavigate();

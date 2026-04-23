@@ -1,3 +1,5 @@
+import { clearAuthSession, getActiveTeamId, getAuthToken } from './auth-session';
+
 export type StudyBundleStudy = {
   id: string;
   business_question?: string | null;
@@ -1694,22 +1696,6 @@ async function fetchWithTimeout(
   }
 }
 
-function getAuthToken(): string {
-  if (typeof globalThis === 'undefined' || !('localStorage' in globalThis)) {
-    return '';
-  }
-  return globalThis.localStorage.getItem('aipersona_token') ?? '';
-}
-
-function clearAuthSession(): void {
-  if (typeof globalThis === 'undefined' || !('localStorage' in globalThis)) {
-    return;
-  }
-  globalThis.localStorage.removeItem('aipersona_token');
-  globalThis.localStorage.removeItem('aipersona_user');
-  globalThis.localStorage.removeItem('aipersona_teams');
-}
-
 async function readErrorDetail(response: Response): Promise<string | null> {
   try {
     const payload = await response.clone().json() as { detail?: string; code?: string };
@@ -1729,8 +1715,12 @@ async function requestJson<T>(
   const apiBase = getApiBase();
   const headers = new Headers(init.headers ?? {});
   const token = getAuthToken();
+  const activeTeamId = getActiveTeamId();
   if (token && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${token}`);
+  }
+  if (activeTeamId && !headers.has('X-Team-Id')) {
+    headers.set('X-Team-Id', activeTeamId);
   }
   if (init.body && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
@@ -1769,6 +1759,38 @@ async function requestJson<T>(
     }
     throw error;
   }
+}
+
+async function requestText(
+  path: string,
+  init: RequestInit = {},
+): Promise<string> {
+  const apiBase = getApiBase();
+  const headers = new Headers(init.headers ?? {});
+  const token = getAuthToken();
+  const activeTeamId = getActiveTeamId();
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+  if (activeTeamId && !headers.has('X-Team-Id')) {
+    headers.set('X-Team-Id', activeTeamId);
+  }
+
+  const response = await fetchWithTimeout(`${apiBase}${path}`, {
+    ...init,
+    headers,
+  });
+
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      clearAuthSession();
+      throw new Error('登录状态已失效，请重新登录后继续。');
+    }
+    const detail = await readErrorDetail(response);
+    throw new Error(detail ?? formatErrorMessage(response));
+  }
+
+  return response.text();
 }
 
 export async function fetchWorkbenchProjection(
@@ -1958,20 +1980,20 @@ export async function createDemoStudy(
   });
 }
 
-export function getReportDownloadUrl(studyId: string): string {
-  return `${getApiBase()}/studies/${encodeURIComponent(studyId)}/report`;
+export async function fetchStudyReportHtml(studyId: string): Promise<string> {
+  return requestText(`/studies/${encodeURIComponent(studyId)}/report`);
 }
 
 export async function submitPlanForApproval(
   studyId: string,
   versionId: string,
-  actor = DEFAULT_ACTOR,
+  _actor = DEFAULT_ACTOR,
 ): Promise<{ status: string }> {
   return requestJson<{ status: string }>(
     `/studies/${encodeURIComponent(studyId)}/plan-versions/${encodeURIComponent(versionId)}/submit`,
     {
       method: 'POST',
-      body: JSON.stringify({ actor }),
+      body: JSON.stringify({}),
     },
   );
 }
@@ -1979,7 +2001,7 @@ export async function submitPlanForApproval(
 export async function approvePlan(
   studyId: string,
   versionId: string,
-  actor = DEFAULT_ACTOR,
+  _actor = DEFAULT_ACTOR,
   decisionComment = 'Approved from workbench',
 ): Promise<PlanVersionSummary> {
   return requestJson<PlanVersionSummary>(
@@ -1987,7 +2009,6 @@ export async function approvePlan(
     {
       method: 'POST',
       body: JSON.stringify({
-        actor,
         decision_comment: decisionComment,
       }),
     },
@@ -1997,13 +2018,12 @@ export async function approvePlan(
 export async function startRun(
   studyId: string,
   versionId: string,
-  actor = DEFAULT_ACTOR,
+  _actor = DEFAULT_ACTOR,
 ): Promise<RunSummary> {
   return requestJson<RunSummary>(`/studies/${encodeURIComponent(studyId)}/runs`, {
     method: 'POST',
     body: JSON.stringify({
       study_plan_version_id: versionId,
-      requested_by: actor,
     }),
   });
 }
@@ -2011,7 +2031,7 @@ export async function startRun(
 export async function resumeRun(
   studyId: string,
   runId: string,
-  actor = DEFAULT_ACTOR,
+  _actor = DEFAULT_ACTOR,
   decisionComment = 'Continue the study run',
   action = 'continue',
 ): Promise<RunSummary> {
@@ -2020,7 +2040,6 @@ export async function resumeRun(
     {
       method: 'POST',
       body: JSON.stringify({
-        actor,
         action,
         decision_comment: decisionComment,
       }),

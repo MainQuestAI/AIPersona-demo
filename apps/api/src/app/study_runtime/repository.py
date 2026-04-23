@@ -48,9 +48,21 @@ class PostgresStudyRuntimeRepository:
                       category,
                       target_groups,
                       status,
-                      owner_team_id
+                      owner_team_id,
+                      team_id,
+                      owner_user_id
                     )
-                    VALUES (%(business_question)s, %(study_type)s, %(brand)s, %(category)s, %(target_groups)s, 'draft', %(owner_team_id)s)
+                    VALUES (
+                      %(business_question)s,
+                      %(study_type)s,
+                      %(brand)s,
+                      %(category)s,
+                      %(target_groups)s,
+                      'draft',
+                      %(owner_team_id)s,
+                      %(team_id)s,
+                      %(owner_user_id)s
+                    )
                     RETURNING *
                     """,
                     payload,
@@ -127,10 +139,21 @@ class PostgresStudyRuntimeRepository:
             "study_plan_version": self._serialize_record(version),
         }
 
-    def get_study_bundle(self, study_id: str) -> dict[str, Any] | None:
+    def get_study_bundle(self, study_id: str, team_id: str | None = None) -> dict[str, Any] | None:
         with self._connect() as connection:
             with connection.cursor() as cursor:
-                cursor.execute("SELECT * FROM study WHERE id = %s", (study_id,))
+                if team_id:
+                    cursor.execute(
+                        """
+                        SELECT *
+                        FROM study
+                        WHERE id = %s
+                          AND COALESCE(team_id, owner_team_id) = %s
+                        """,
+                        (study_id, team_id),
+                    )
+                else:
+                    cursor.execute("SELECT * FROM study WHERE id = %s", (study_id,))
                 study = cursor.fetchone()
                 if study is None:
                     return None
@@ -414,13 +437,26 @@ class PostgresStudyRuntimeRepository:
                 )
             connection.commit()
 
-    def get_run(self, study_id: str, run_id: str) -> dict[str, Any] | None:
+    def get_run(self, study_id: str, run_id: str, team_id: str | None = None) -> dict[str, Any] | None:
         with self._connect() as connection:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    "SELECT * FROM study_run WHERE study_id = %s AND id = %s",
-                    (study_id, run_id),
-                )
+                if team_id:
+                    cursor.execute(
+                        """
+                        SELECT sr.*
+                        FROM study_run sr
+                        JOIN study s ON s.id = sr.study_id
+                        WHERE sr.study_id = %s
+                          AND sr.id = %s
+                          AND COALESCE(s.team_id, s.owner_team_id) = %s
+                        """,
+                        (study_id, run_id, team_id),
+                    )
+                else:
+                    cursor.execute(
+                        "SELECT * FROM study_run WHERE study_id = %s AND id = %s",
+                        (study_id, run_id),
+                    )
                 run = cursor.fetchone()
                 if run is None:
                     return None
@@ -661,29 +697,53 @@ class PostgresStudyRuntimeRepository:
             ],
         }
 
-    def list_studies(self) -> list[dict[str, Any]]:
+    def list_studies(self, team_id: str | None = None) -> list[dict[str, Any]]:
         with self._connect() as connection:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT
-                      s.*,
-                      sp.current_execution_version_id,
-                      spv.version_no AS latest_plan_version_no,
-                      sr.status AS current_run_status
-                    FROM study s
-                    LEFT JOIN study_plan sp ON sp.study_id = s.id
-                    LEFT JOIN study_plan_version spv ON spv.id = sp.latest_approved_version_id
-                    LEFT JOIN LATERAL (
-                      SELECT status
-                      FROM study_run
-                      WHERE study_id = s.id
-                      ORDER BY created_at DESC
-                      LIMIT 1
-                    ) sr ON TRUE
-                    ORDER BY s.updated_at DESC
-                    """
-                )
+                if team_id:
+                    cursor.execute(
+                        """
+                        SELECT
+                          s.*,
+                          sp.current_execution_version_id,
+                          spv.version_no AS latest_plan_version_no,
+                          sr.status AS current_run_status
+                        FROM study s
+                        LEFT JOIN study_plan sp ON sp.study_id = s.id
+                        LEFT JOIN study_plan_version spv ON spv.id = sp.latest_approved_version_id
+                        LEFT JOIN LATERAL (
+                          SELECT status
+                          FROM study_run
+                          WHERE study_id = s.id
+                          ORDER BY created_at DESC
+                          LIMIT 1
+                        ) sr ON TRUE
+                        WHERE COALESCE(s.team_id, s.owner_team_id) = %s
+                        ORDER BY s.updated_at DESC
+                        """,
+                        (team_id,),
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        SELECT
+                          s.*,
+                          sp.current_execution_version_id,
+                          spv.version_no AS latest_plan_version_no,
+                          sr.status AS current_run_status
+                        FROM study s
+                        LEFT JOIN study_plan sp ON sp.study_id = s.id
+                        LEFT JOIN study_plan_version spv ON spv.id = sp.latest_approved_version_id
+                        LEFT JOIN LATERAL (
+                          SELECT status
+                          FROM study_run
+                          WHERE study_id = s.id
+                          ORDER BY created_at DESC
+                          LIMIT 1
+                        ) sr ON TRUE
+                        ORDER BY s.updated_at DESC
+                        """
+                    )
                 rows = cursor.fetchall()
         return [self._serialize_record(row) for row in rows]
 

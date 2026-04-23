@@ -21,6 +21,8 @@ class CreateStudyCommand:
     qual_config: dict[str, Any]
     quant_config: dict[str, Any]
     generated_by: str
+    owner_user_id: str | None = None
+    team_id: str | None = None
     owner_team_id: str | None = None
     anchor_set_id: str | None = None
     agent_config_ids: list[str] = field(default_factory=list)
@@ -74,7 +76,7 @@ class StudyRuntimeRepository(Protocol):
     def create_study_bundle(self, command: CreateStudyCommand) -> dict[str, Any]:
         ...
 
-    def get_study_bundle(self, study_id: str) -> dict[str, Any] | None:
+    def get_study_bundle(self, study_id: str, team_id: str | None = None) -> dict[str, Any] | None:
         ...
 
     def get_plan_version(self, study_id: str, version_id: str) -> dict[str, Any] | None:
@@ -95,13 +97,13 @@ class StudyRuntimeRepository(Protocol):
     def fail_run(self, study_id: str, run_id: str, reason: str | None = None) -> None:
         ...
 
-    def get_run(self, study_id: str, run_id: str) -> dict[str, Any] | None:
+    def get_run(self, study_id: str, run_id: str, team_id: str | None = None) -> dict[str, Any] | None:
         ...
 
     def bootstrap_seed_assets(self) -> dict[str, Any]:
         ...
 
-    def list_studies(self) -> list[dict[str, Any]]:
+    def list_studies(self, team_id: str | None = None) -> list[dict[str, Any]]:
         ...
 
     def list_consumer_twins(self) -> list[dict[str, Any]]:
@@ -224,8 +226,8 @@ class StudyRuntimeService:
     def create_study(self, command: CreateStudyCommand) -> dict[str, Any]:
         return self._repository.create_study_bundle(command)
 
-    def get_study_bundle(self, study_id: str) -> dict[str, Any]:
-        bundle = self._repository.get_study_bundle(study_id)
+    def get_study_bundle(self, study_id: str, *, team_id: str | None = None) -> dict[str, Any]:
+        bundle = self._repository.get_study_bundle(study_id, team_id=team_id)
         if bundle is None:
             raise AppError("Study not found", code="study_not_found", status_code=404)
         return bundle
@@ -308,17 +310,17 @@ class StudyRuntimeService:
         )
         return self._require_run(command.study_id, command.study_run_id)
 
-    def get_run(self, study_id: str, run_id: str) -> dict[str, Any]:
-        return self._require_run(study_id, run_id)
+    def get_run(self, study_id: str, run_id: str, *, team_id: str | None = None) -> dict[str, Any]:
+        return self._require_run(study_id, run_id, team_id=team_id)
 
     def bootstrap_seed_assets(self) -> dict[str, Any]:
         return self._repository.bootstrap_seed_assets()
 
-    def list_studies(self) -> list[dict[str, Any]]:
-        return self._repository.list_studies()
+    def list_studies(self, *, team_id: str | None = None) -> list[dict[str, Any]]:
+        return self._repository.list_studies(team_id=team_id)
 
-    def get_study_detail(self, study_id: str) -> dict[str, Any]:
-        bundle = self.get_study_bundle(study_id)
+    def get_study_detail(self, study_id: str, *, team_id: str | None = None) -> dict[str, Any]:
+        bundle = self.get_study_bundle(study_id, team_id=team_id)
         latest_version = max(
             bundle.get("plan_versions", []),
             key=lambda item: item.get("version_no", 0),
@@ -360,8 +362,8 @@ class StudyRuntimeService:
             raise AppError("Study plan version not found", code="plan_version_not_found", status_code=404)
         return version
 
-    def _require_run(self, study_id: str, run_id: str) -> dict[str, Any]:
-        run = self._repository.get_run(study_id, run_id)
+    def _require_run(self, study_id: str, run_id: str, *, team_id: str | None = None) -> dict[str, Any]:
+        run = self._repository.get_run(study_id, run_id, team_id=team_id)
         if run is None:
             raise AppError("Study run not found", code="study_run_not_found", status_code=404)
         return run

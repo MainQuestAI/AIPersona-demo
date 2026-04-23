@@ -8,7 +8,6 @@ import {
   bootstrapSeedAssets,
   createDemoStudy,
   fetchWorkbenchProjection,
-  getReportDownloadUrl,
   listStudies,
   resumeRun,
   startAgent,
@@ -18,6 +17,7 @@ import {
   type StudyListItem,
   type WorkbenchProjection,
 } from '../services/studyRuntime';
+import { openStudyReportWindow } from '../services/reportWindow';
 import {
   rememberLatestStudySession,
   type LatestStudySession,
@@ -490,7 +490,7 @@ export function WorkbenchPlaceholder() {
     } else if (action === '下载报告') {
       const hasReport = projection?.artifacts?.some((a) => a.artifact_type === 'report' && a.status === 'ready');
       if (hasReport) {
-        window.open(getReportDownloadUrl(activeStudyId), '_blank');
+        await openStudyReportWindow(activeStudyId);
       } else {
         showToast('报告正在生成中，请稍后再试');
       }
